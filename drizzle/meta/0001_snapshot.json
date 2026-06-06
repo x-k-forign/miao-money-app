@@ -1,0 +1,631 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "f174f03d-5b00-45fd-bd5c-241db30705ca",
+  "prevId": "d93d9840-1aa2-4f81-a9c6-7255f17446eb",
+  "tables": {
+    "app_settings": {
+      "name": "app_settings",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_type": {
+          "name": "value_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'string'"
+        },
+        "theme_name": {
+          "name": "theme_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "app_settings_value_type_check": {
+          "name": "app_settings_value_type_check",
+          "value": "\"app_settings\".\"value_type\" IN ('string', 'number', 'boolean', 'json')"
+        },
+        "app_settings_theme_name_check": {
+          "name": "app_settings_theme_name_check",
+          "value": "\"app_settings\".\"theme_name\" IS NULL OR \"app_settings\".\"theme_name\" IN ('lightBlue', 'sakuraPink', 'mintGreen', 'creamYellow', 'nightBlue')"
+        }
+      }
+    },
+    "categories": {
+      "name": "categories",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "icon": {
+          "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "is_system": {
+          "name": "is_system",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "categories_kind_name_idx": {
+          "name": "categories_kind_name_idx",
+          "columns": [
+            "kind",
+            "name"
+          ],
+          "isUnique": true
+        },
+        "categories_kind_sort_idx": {
+          "name": "categories_kind_sort_idx",
+          "columns": [
+            "kind",
+            "sort_order"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "categories_kind_check": {
+          "name": "categories_kind_check",
+          "value": "\"categories\".\"kind\" IN ('income', 'expense')"
+        },
+        "categories_is_system_check": {
+          "name": "categories_is_system_check",
+          "value": "\"categories\".\"is_system\" IN (0, 1)"
+        }
+      }
+    },
+    "exchange_rates": {
+      "name": "exchange_rates",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_currency": {
+          "name": "base_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_currency": {
+          "name": "target_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rate": {
+          "name": "rate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rate_date": {
+          "name": "rate_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "exchange_rates_currency_date_idx": {
+          "name": "exchange_rates_currency_date_idx",
+          "columns": [
+            "base_currency",
+            "target_currency",
+            "rate_date"
+          ],
+          "isUnique": true
+        },
+        "exchange_rates_latest_idx": {
+          "name": "exchange_rates_latest_idx",
+          "columns": [
+            "base_currency",
+            "target_currency",
+            "rate_date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "exchange_rates_currency_check": {
+          "name": "exchange_rates_currency_check",
+          "value": "\"exchange_rates\".\"base_currency\" IN ('CNY', 'USD', 'EUR', 'JPY', 'HKD', 'GBP', 'KRW')\n        AND \"exchange_rates\".\"target_currency\" IN ('CNY', 'USD', 'EUR', 'JPY', 'HKD', 'GBP', 'KRW')"
+        },
+        "exchange_rates_pair_check": {
+          "name": "exchange_rates_pair_check",
+          "value": "\"exchange_rates\".\"base_currency\" <> \"exchange_rates\".\"target_currency\""
+        },
+        "exchange_rates_rate_positive_check": {
+          "name": "exchange_rates_rate_positive_check",
+          "value": "CAST(\"exchange_rates\".\"rate\" AS REAL) > 0"
+        },
+        "exchange_rates_date_format_check": {
+          "name": "exchange_rates_date_format_check",
+          "value": "length(\"exchange_rates\".\"rate_date\") = 10"
+        }
+      }
+    },
+    "records": {
+      "name": "records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "record_date": {
+          "name": "record_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "record_month": {
+          "name": "record_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'manual'"
+        },
+        "subscription_id": {
+          "name": "subscription_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "records_month_sort_idx": {
+          "name": "records_month_sort_idx",
+          "columns": [
+            "record_month",
+            "record_date",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "records_date_sort_idx": {
+          "name": "records_date_sort_idx",
+          "columns": [
+            "record_date",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "records_category_month_idx": {
+          "name": "records_category_month_idx",
+          "columns": [
+            "category_id",
+            "record_month"
+          ],
+          "isUnique": false
+        },
+        "records_subscription_month_idx": {
+          "name": "records_subscription_month_idx",
+          "columns": [
+            "subscription_id",
+            "record_month",
+            "source"
+          ],
+          "isUnique": false
+        },
+        "records_subscription_month_unique_idx": {
+          "name": "records_subscription_month_unique_idx",
+          "columns": [
+            "subscription_id",
+            "record_month",
+            "source"
+          ],
+          "isUnique": true,
+          "where": "\"records\".\"source\" = 'subscription' AND \"records\".\"subscription_id\" IS NOT NULL"
+        }
+      },
+      "foreignKeys": {
+        "records_category_id_categories_id_fk": {
+          "name": "records_category_id_categories_id_fk",
+          "tableFrom": "records",
+          "tableTo": "categories",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "records_subscription_id_subscriptions_id_fk": {
+          "name": "records_subscription_id_subscriptions_id_fk",
+          "tableFrom": "records",
+          "tableTo": "subscriptions",
+          "columnsFrom": [
+            "subscription_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "records_type_check": {
+          "name": "records_type_check",
+          "value": "\"records\".\"type\" IN ('income', 'expense')"
+        },
+        "records_amount_positive_check": {
+          "name": "records_amount_positive_check",
+          "value": "\"records\".\"amount_cents\" > 0"
+        },
+        "records_source_check": {
+          "name": "records_source_check",
+          "value": "\"records\".\"source\" IN ('manual', 'subscription')"
+        },
+        "records_date_format_check": {
+          "name": "records_date_format_check",
+          "value": "length(\"records\".\"record_date\") = 10"
+        },
+        "records_month_format_check": {
+          "name": "records_month_format_check",
+          "value": "length(\"records\".\"record_month\") = 7"
+        },
+        "records_month_matches_date_check": {
+          "name": "records_month_matches_date_check",
+          "value": "\"records\".\"record_month\" = substr(\"records\".\"record_date\", 1, 7)"
+        },
+        "records_subscription_source_check": {
+          "name": "records_subscription_source_check",
+          "value": "(\"records\".\"source\" = 'subscription' AND \"records\".\"subscription_id\" IS NOT NULL) OR \"records\".\"source\" = 'manual'"
+        }
+      }
+    },
+    "subscriptions": {
+      "name": "subscriptions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "day_of_month": {
+          "name": "day_of_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_generated_month": {
+          "name": "last_generated_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reminder_enabled": {
+          "name": "reminder_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "reminder_days_before": {
+          "name": "reminder_days_before",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reminder_time": {
+          "name": "reminder_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_reminded_month": {
+          "name": "last_reminded_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "subscriptions_enabled_day_idx": {
+          "name": "subscriptions_enabled_day_idx",
+          "columns": [
+            "enabled",
+            "day_of_month"
+          ],
+          "isUnique": false
+        },
+        "subscriptions_category_idx": {
+          "name": "subscriptions_category_idx",
+          "columns": [
+            "category_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "subscriptions_category_id_categories_id_fk": {
+          "name": "subscriptions_category_id_categories_id_fk",
+          "tableFrom": "subscriptions",
+          "tableTo": "categories",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "subscriptions_type_check": {
+          "name": "subscriptions_type_check",
+          "value": "\"subscriptions\".\"type\" IN ('income', 'expense')"
+        },
+        "subscriptions_amount_positive_check": {
+          "name": "subscriptions_amount_positive_check",
+          "value": "\"subscriptions\".\"amount_cents\" > 0"
+        },
+        "subscriptions_day_of_month_check": {
+          "name": "subscriptions_day_of_month_check",
+          "value": "\"subscriptions\".\"day_of_month\" BETWEEN 1 AND 28"
+        },
+        "subscriptions_enabled_check": {
+          "name": "subscriptions_enabled_check",
+          "value": "\"subscriptions\".\"enabled\" IN (0, 1)"
+        },
+        "subscriptions_reminder_enabled_check": {
+          "name": "subscriptions_reminder_enabled_check",
+          "value": "\"subscriptions\".\"reminder_enabled\" IN (0, 1)"
+        },
+        "subscriptions_reminder_days_check": {
+          "name": "subscriptions_reminder_days_check",
+          "value": "\"subscriptions\".\"reminder_days_before\" IS NULL OR \"subscriptions\".\"reminder_days_before\" BETWEEN 0 AND 28"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
