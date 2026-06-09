@@ -8,6 +8,8 @@ import {
   detachSubscriptionGeneratedRecords,
   upsertSubscriptionRecordForMonth
 } from "@/services/recordService";
+import { cancelSubscriptionReminder, scheduleSubscriptionReminder } from "@/services/notificationService";
+import { centsToYuan } from "@/utils/money";
 
 export interface SaveSubscriptionInput {
   name: string;
@@ -17,6 +19,9 @@ export interface SaveSubscriptionInput {
   dayOfMonth: number;
   enabled: boolean;
   note: string;
+  reminderDaysBefore?: number | null;
+  reminderEnabled?: boolean;
+  reminderTime?: string | null;
 }
 
 const webSubscriptions: SubscriptionDTO[] = mockSubscriptions.map((subscription, index) => ({
@@ -45,6 +50,7 @@ export async function addSubscription(input: SaveSubscriptionInput): Promise<str
       updatedAt: getNowISOString()
     });
     await syncSubscriptionForCurrentMonth(id);
+    await syncSubscriptionReminder(id);
     return id;
   }
 
@@ -55,6 +61,7 @@ export async function addSubscription(input: SaveSubscriptionInput): Promise<str
     lastGeneratedMonth: null
   });
   await syncSubscriptionForCurrentMonth(id);
+  await syncSubscriptionReminder(id);
 
   return id;
 }
@@ -76,16 +83,19 @@ export async function updateSubscriptionById(id: string, input: SaveSubscription
       };
     }
     await syncSubscriptionForCurrentMonth(id);
+    await syncSubscriptionReminder(id);
     return;
   }
 
   const { updateSubscription } = await import("@/db/queries/subscriptions");
   await updateSubscription(id, input);
   await syncSubscriptionForCurrentMonth(id);
+  await syncSubscriptionReminder(id);
 }
 
 export async function deleteSubscriptionById(id: string): Promise<void> {
   await cancelSubscriptionForCurrentMonth(id);
+  await cancelSubscriptionReminder(id);
   await detachSubscriptionGeneratedRecords(id);
 
   if (Platform.OS === "web") {
@@ -108,12 +118,14 @@ export async function toggleSubscriptionEnabled(id: string, enabled: boolean): P
       subscription.updatedAt = getNowISOString();
     }
     await syncSubscriptionForCurrentMonth(id);
+    await syncSubscriptionReminder(id);
     return;
   }
 
   const { updateSubscription } = await import("@/db/queries/subscriptions");
   await updateSubscription(id, { enabled });
   await syncSubscriptionForCurrentMonth(id);
+  await syncSubscriptionReminder(id);
 }
 
 export async function getSubscriptions(): Promise<SubscriptionDTO[]> {
@@ -205,6 +217,24 @@ async function markGenerated(id: string, month: string | null): Promise<void> {
   await updateSubscription(id, { lastGeneratedMonth: month });
 }
 
+async function syncSubscriptionReminder(id: string): Promise<void> {
+  const subscription = await getSubscriptionById(id);
+
+  if (!subscription || !subscription.enabled || subscription.reminderEnabled === false) {
+    await cancelSubscriptionReminder(id);
+    return;
+  }
+
+  await scheduleSubscriptionReminder({
+    amountLabel: `¥${centsToYuan(subscription.amountCents)}`,
+    dayOfMonth: subscription.dayOfMonth,
+    reminderDaysBefore: subscription.reminderDaysBefore ?? 3,
+    reminderTime: subscription.reminderTime ?? "12:00",
+    subscriptionId: subscription.id,
+    subscriptionName: subscription.name
+  });
+}
+
 function validateSubscription(input: SaveSubscriptionInput): void {
   if (!input.name.trim()) {
     throw new Error("Subscription name is required");
@@ -243,10 +273,10 @@ function findWebCategoryId(type: RecordType, categoryName: string): string {
 
 function sortSubscriptions(subscriptions: SubscriptionDTO[]): SubscriptionDTO[] {
   return [...subscriptions].sort((a, b) => {
-    if (a.enabled !== b.enabled) {
-      return a.enabled ? -1 : 1;
+    if (a.dayOfMonth !== b.dayOfMonth) {
+      return a.dayOfMonth - b.dayOfMonth;
     }
 
-    return a.dayOfMonth - b.dayOfMonth;
+    return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
   });
 }

@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import { mockRecords } from "@/constants/mockData";
 import type { NewRecordRow } from "@/db/schema";
-import type { RecordDTO, RecordSource, RecordType } from "@/types/models";
+import type { ImportProvider, RecordDTO, RecordSource, RecordType } from "@/types/models";
 import { getNowISOString, getRecordMonth } from "@/utils/date";
 import { createLocalId } from "@/utils/id";
 
@@ -11,6 +11,14 @@ export interface SaveRecordInput {
   categoryId: string;
   note: string;
   recordDate: string;
+}
+
+export interface SaveImportRecordInput extends SaveRecordInput {
+  dedupeHash?: string;
+  externalTradeNo?: string;
+  importBatchId: string;
+  importProvider: ImportProvider;
+  merchantName?: string;
 }
 
 const webRecords: RecordDTO[] = mockRecords.map((record) => ({
@@ -28,6 +36,45 @@ export async function createSubscriptionRecord(
   input: SaveRecordInput & { subscriptionId: string }
 ): Promise<string> {
   return createRecordWithSource(input, "subscription", input.subscriptionId);
+}
+
+export async function createImportedRecord(input: SaveImportRecordInput): Promise<string> {
+  return createRecordWithSource(input, "import", undefined, input);
+}
+
+export async function createImportedRecords(inputs: SaveImportRecordInput[]): Promise<number> {
+  if (inputs.length === 0) {
+    return 0;
+  }
+
+  if (Platform.OS === "web") {
+    for (const input of inputs) {
+      await createImportedRecord(input);
+    }
+    return inputs.length;
+  }
+
+  const { createRecords } = await import("@/db/queries/records");
+  await createRecords(
+    inputs.map((input) => ({
+      id: createLocalId("record"),
+      type: input.type,
+      amountCents: input.amountCents,
+      categoryId: input.categoryId,
+      note: input.note,
+      recordDate: input.recordDate,
+      recordMonth: getRecordMonth(input.recordDate),
+      source: "import",
+      subscriptionId: null,
+      importBatchId: input.importBatchId,
+      importProvider: input.importProvider,
+      externalTradeNo: input.externalTradeNo ?? null,
+      merchantName: input.merchantName ?? null,
+      dedupeHash: input.dedupeHash ?? null
+    }))
+  );
+
+  return inputs.length;
 }
 
 export async function upsertSubscriptionRecordForMonth(
@@ -144,6 +191,16 @@ export async function deleteRecordById(id: string): Promise<void> {
   await deleteRecord(id);
 }
 
+export async function deleteAllRecordRows(): Promise<void> {
+  if (Platform.OS === "web") {
+    webRecords.splice(0, webRecords.length);
+    return;
+  }
+
+  const { deleteAllRecords } = await import("@/db/queries/records");
+  await deleteAllRecords();
+}
+
 export async function getMonthlyRecords(month: string): Promise<RecordDTO[]> {
   if (Platform.OS === "web") {
     return sortRecords(webRecords.filter((record) => record.recordDate.startsWith(month)));
@@ -180,7 +237,8 @@ export async function getRecordsForMonths(months: string[]): Promise<RecordDTO[]
 async function createRecordWithSource(
   input: SaveRecordInput,
   source: RecordSource,
-  subscriptionId?: string
+  subscriptionId?: string,
+  importInput?: SaveImportRecordInput
 ): Promise<string> {
   const id = createLocalId("record");
 
@@ -194,6 +252,11 @@ async function createRecordWithSource(
       categoryColor: category?.color ?? "#72C8F3",
       source,
       subscriptionId: subscriptionId ?? null,
+      importBatchId: importInput?.importBatchId ?? null,
+      importProvider: importInput?.importProvider ?? null,
+      externalTradeNo: importInput?.externalTradeNo ?? null,
+      merchantName: importInput?.merchantName ?? null,
+      dedupeHash: importInput?.dedupeHash ?? null,
       createdAt: getNowISOString(),
       updatedAt: getNowISOString()
     });
@@ -210,7 +273,12 @@ async function createRecordWithSource(
     recordDate: input.recordDate,
     recordMonth: getRecordMonth(input.recordDate),
     source,
-    subscriptionId: subscriptionId ?? null
+    subscriptionId: subscriptionId ?? null,
+    importBatchId: importInput?.importBatchId ?? null,
+    importProvider: importInput?.importProvider ?? null,
+    externalTradeNo: importInput?.externalTradeNo ?? null,
+    merchantName: importInput?.merchantName ?? null,
+    dedupeHash: importInput?.dedupeHash ?? null
   });
 
   return id;

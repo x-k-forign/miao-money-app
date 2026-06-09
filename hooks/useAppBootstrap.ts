@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Platform } from "react-native";
+import { configureNotificationRuntime } from "@/services/notificationService";
 
 export function useAppBootstrap(): boolean {
   const [ready, setReady] = useState(false);
@@ -21,6 +22,7 @@ export function useAppBootstrap(): boolean {
 
       await initializeDatabase();
       await seedDefaultCategories();
+      await configureNotificationRuntime();
       await generateDueSubscriptionRecords();
     }
 

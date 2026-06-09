@@ -1,10 +1,18 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { categories, records, type NewRecordRow, type RecordRow } from "@/db/schema";
 import type { RecordDTO } from "@/types/models";
 
 export async function createRecord(input: NewRecordRow): Promise<void> {
   await db.insert(records).values(input);
+}
+
+export async function createRecords(inputs: NewRecordRow[]): Promise<void> {
+  if (inputs.length === 0) {
+    return;
+  }
+
+  await db.insert(records).values(inputs).onConflictDoNothing();
 }
 
 export async function upsertSubscriptionRecord(input: NewRecordRow): Promise<void> {
@@ -37,6 +45,10 @@ export async function updateRecord(id: string, input: Partial<NewRecordRow>): Pr
 
 export async function deleteRecord(id: string): Promise<void> {
   await db.delete(records).where(eq(records.id, id));
+}
+
+export async function deleteAllRecords(): Promise<void> {
+  await db.delete(records);
 }
 
 export async function deleteSubscriptionRecordForMonth(subscriptionId: string, month: string): Promise<void> {
@@ -89,6 +101,11 @@ export async function listRecordDTOsByMonth(month: string): Promise<RecordDTO[]>
         recordDate: records.recordDate,
         source: records.source,
         subscriptionId: records.subscriptionId,
+        importBatchId: records.importBatchId,
+        importProvider: records.importProvider,
+        externalTradeNo: records.externalTradeNo,
+        merchantName: records.merchantName,
+        dedupeHash: records.dedupeHash,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -114,6 +131,11 @@ export async function listRecordDTOsByDate(date: string): Promise<RecordDTO[]> {
         recordDate: records.recordDate,
         source: records.source,
         subscriptionId: records.subscriptionId,
+        importBatchId: records.importBatchId,
+        importProvider: records.importProvider,
+        externalTradeNo: records.externalTradeNo,
+        merchantName: records.merchantName,
+        dedupeHash: records.dedupeHash,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -139,6 +161,11 @@ export async function findRecordDTOById(id: string): Promise<RecordDTO | undefin
         recordDate: records.recordDate,
         source: records.source,
         subscriptionId: records.subscriptionId,
+        importBatchId: records.importBatchId,
+        importProvider: records.importProvider,
+        externalTradeNo: records.externalTradeNo,
+        merchantName: records.merchantName,
+        dedupeHash: records.dedupeHash,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -167,6 +194,77 @@ export async function findSubscriptionRecord(subscriptionId: string, month: stri
   return record;
 }
 
+export async function findImportRecordByTradeNo(
+  provider: NonNullable<RecordRow["importProvider"]>,
+  externalTradeNo: string
+): Promise<RecordRow | undefined> {
+  const [record] = await db
+    .select()
+    .from(records)
+    .where(
+      and(
+        eq(records.source, "import"),
+        eq(records.importProvider, provider),
+        eq(records.externalTradeNo, externalTradeNo)
+      )
+    )
+    .limit(1);
+
+  return record;
+}
+
+export async function findImportRecordByDedupeHash(dedupeHash: string): Promise<RecordRow | undefined> {
+  const [record] = await db
+    .select()
+    .from(records)
+    .where(and(eq(records.source, "import"), eq(records.dedupeHash, dedupeHash)))
+    .limit(1);
+
+  return record;
+}
+
+export async function findPossibleDuplicateRecords(input: {
+  amountCents: number;
+  dateCandidates: string[];
+}): Promise<RecordDTO[]> {
+  if (input.dateCandidates.length === 0) {
+    return [];
+  }
+
+  return mapRecordRows(
+    await db
+      .select({
+        id: records.id,
+        type: records.type,
+        amountCents: records.amountCents,
+        categoryId: records.categoryId,
+        categoryName: categories.name,
+        categoryIcon: categories.icon,
+        categoryColor: categories.color,
+        note: records.note,
+        recordDate: records.recordDate,
+        source: records.source,
+        subscriptionId: records.subscriptionId,
+        importBatchId: records.importBatchId,
+        importProvider: records.importProvider,
+        externalTradeNo: records.externalTradeNo,
+        merchantName: records.merchantName,
+        dedupeHash: records.dedupeHash,
+        createdAt: records.createdAt,
+        updatedAt: records.updatedAt
+      })
+      .from(records)
+      .innerJoin(categories, eq(records.categoryId, categories.id))
+      .where(
+        and(
+          eq(records.amountCents, input.amountCents),
+          or(...input.dateCandidates.map((date) => eq(records.recordDate, date)))
+        )
+      )
+      .orderBy(desc(records.recordDate), desc(records.createdAt))
+  );
+}
+
 function mapRecordRows(
   rows: Array<{
     id: string;
@@ -180,6 +278,11 @@ function mapRecordRows(
     recordDate: string;
     source: RecordDTO["source"];
     subscriptionId: string | null;
+    importBatchId: string | null;
+    importProvider: RecordDTO["importProvider"];
+    externalTradeNo: string | null;
+    merchantName: string | null;
+    dedupeHash: string | null;
     createdAt: string;
     updatedAt: string;
   }>

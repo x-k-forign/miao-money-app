@@ -553,9 +553,9 @@ interface TrendLineChartProps {
 function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
   const [activePoint, setActivePoint] = useState<TrendPoint | null>(null);
   const width = 286;
-  const height = 154;
+  const height = 178;
   const left = 42;
-  const top = 16;
+  const top = 48;
   const plotWidth = width - left - 12;
   const plotHeight = 94;
   const steps = [maxValue, Math.round(maxValue / 2), 0];
@@ -568,13 +568,17 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
   const linePath = hasPoints ? coordinates.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ") : "";
   const areaPath = hasPoints ? `${linePath} L ${left + plotWidth} ${top + plotHeight} L ${left} ${top + plotHeight} Z` : "";
   const active = activePoint ? coordinates.find((item) => item.label === activePoint.label) : null;
+  const tooltipWidth = 82;
+  const nativeTooltipStyle = active
+    ? {
+        left: Math.min(width - tooltipWidth - 4, Math.max(4, active.x - tooltipWidth / 2)),
+        top: Math.max(4, active.y - 48),
+        width: tooltipWidth
+      }
+    : null;
 
   function showPoint(point: TrendPoint) {
     setActivePoint(point);
-  }
-
-  function hidePoint() {
-    setActivePoint(null);
   }
 
   if (Platform.OS === "web") {
@@ -630,15 +634,26 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
             React.createElement("circle", {
               cx: point.x,
               cy: point.y,
+              fill: "transparent",
+              key: `hit-${point.label}`,
+              onClick: () => showPoint(point),
+              onMouseEnter: () => showPoint(point),
+              r: 16,
+              style: { cursor: "pointer" }
+            })
+          ),
+          coordinates.map((point) =>
+            React.createElement("circle", {
+              cx: point.x,
+              cy: point.y,
               fill: "#FFFFFF",
               key: `point-${point.label}`,
               onClick: () => showPoint(point),
               onMouseEnter: () => showPoint(point),
-              onMouseLeave: hidePoint,
               r: activePoint?.label === point.label ? 7 : 5,
               stroke: color,
               strokeWidth: activePoint?.label === point.label ? 4 : 3,
-              style: { cursor: "pointer", transition: "r 140ms ease, stroke-width 140ms ease" }
+              style: { cursor: "pointer", pointerEvents: "none", transition: "r 140ms ease, stroke-width 140ms ease" }
             })
           ),
           coordinates.map((point) =>
@@ -659,7 +674,7 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
           active
             ? React.createElement(
                 "g",
-                { key: "tooltip" },
+                { key: "tooltip", pointerEvents: "none" },
                 React.createElement("line", {
                   x1: active.x,
                   x2: active.x,
@@ -677,7 +692,7 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
                   strokeWidth: 1,
                   width: 82,
                   x: Math.min(width - 88, Math.max(4, active.x - 41)),
-                  y: Math.max(4, active.y - 54)
+                  y: Math.max(4, active.y - 46)
                 }),
                 React.createElement(
                   "text",
@@ -687,7 +702,7 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
                     fontWeight: 900,
                     textAnchor: "middle",
                     x: Math.min(width - 47, Math.max(45, active.x)),
-                    y: Math.max(20, active.y - 35)
+                    y: Math.max(20, active.y - 27)
                   },
                   active.label
                 ),
@@ -699,7 +714,7 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
                     fontWeight: 900,
                     textAnchor: "middle",
                     x: Math.min(width - 47, Math.max(45, active.x)),
-                    y: Math.max(36, active.y - 19)
+                    y: Math.max(36, active.y - 11)
                   },
                   `¥${active.value}`
                 )
@@ -741,13 +756,22 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
         {hasPoints ? <Path d={linePath} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} /> : null}
         {coordinates.map((point) => (
           <Circle
+            key={`hit-${point.label}`}
+            cx={point.x}
+            cy={point.y}
+            fill="transparent"
+            onPress={() => showPoint(point)}
+            r={16}
+          />
+        ))}
+        {coordinates.map((point) => (
+          <Circle
             key={`point-${point.label}`}
             cx={point.x}
             cy={point.y}
             fill="#FFFFFF"
             onPress={() => showPoint(point)}
             onPressIn={() => showPoint(point)}
-            onPressOut={hidePoint}
             r={activePoint?.label === point.label ? 7 : 5}
             stroke={color}
             strokeWidth={activePoint?.label === point.label ? 4 : 3}
@@ -769,10 +793,14 @@ function TrendLineChart({ color, maxValue, points }: TrendLineChartProps) {
         ))}
       </View>
       {!hasPoints ? <Text style={styles.emptyTrendText}>暂无趋势数据</Text> : null}
-      {activePoint ? (
-        <Animated.View entering={FadeInUp.duration(120)} style={[styles.lineTooltip, { borderColor: `${color}55` }]}>
-          <Text style={styles.tooltipLabel}>{activePoint.label}</Text>
-          <Text style={[styles.tooltipValue, { color }]}>¥{activePoint.value}</Text>
+      {active && nativeTooltipStyle ? (
+        <Animated.View
+          pointerEvents="none"
+          entering={FadeInUp.duration(120)}
+          style={[styles.lineTooltip, nativeTooltipStyle, { borderColor: `${color}55` }]}
+        >
+          <Text style={styles.tooltipLabel}>{active.label}</Text>
+          <Text style={[styles.tooltipValue, { color }]}>¥{active.value}</Text>
         </Animated.View>
       ) : null}
     </View>
@@ -981,7 +1009,7 @@ const styles = StyleSheet.create({
     color: defaultTheme.primary
   },
   lineChartWrap: {
-    height: 166,
+    height: 190,
     justifyContent: "center",
     overflow: "visible",
     position: "relative",
@@ -992,7 +1020,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     left: 0,
     position: "absolute",
-    top: 13,
+    top: 45,
     width: 34
   },
   axisAmount: {
@@ -1022,7 +1050,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 12,
     textAlign: "center",
-    top: 62
+    top: 94
   },
   lineTooltip: {
     backgroundColor: "#FFFFFF",
@@ -1032,9 +1060,7 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    position: "absolute",
-    right: 8,
-    top: 8
+    position: "absolute"
   },
   tooltipLabel: {
     color: defaultTheme.text,

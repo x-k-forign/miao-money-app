@@ -10,6 +10,7 @@ import { MiaoCard } from "@/components/common/MiaoCard";
 import { MiaoLoader } from "@/components/common/MiaoLoader";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DayOfMonthPicker } from "@/components/subscriptions/DayOfMonthPicker";
+import { SubscriptionReminderFields } from "@/components/subscriptions/SubscriptionReminderFields";
 import { defaultTheme } from "@/constants/themes";
 import { getCategories } from "@/services/categoryService";
 import { getSubscriptionById, updateSubscriptionById } from "@/services/subscriptionService";
@@ -32,6 +33,9 @@ export default function EditSubscriptionScreen() {
   const [day, setDay] = useState(1);
   const [note, setNote] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderDaysBefore, setReminderDaysBefore] = useState(3);
+  const [reminderTime, setReminderTime] = useState("12:00");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -59,6 +63,9 @@ export default function EditSubscriptionScreen() {
         setDay(subscription.dayOfMonth);
         setNote(subscription.note);
         setEnabled(subscription.enabled);
+        setReminderEnabled(subscription.reminderEnabled ?? true);
+        setReminderDaysBefore(subscription.reminderDaysBefore ?? 3);
+        setReminderTime(subscription.reminderTime ?? "12:00");
       }
     }
 
@@ -90,7 +97,10 @@ export default function EditSubscriptionScreen() {
         categoryId,
         dayOfMonth: day,
         enabled,
-        note
+        note,
+        reminderDaysBefore,
+        reminderEnabled,
+        reminderTime
       });
       requestRecordRefresh();
       requestRefresh();
@@ -106,7 +116,7 @@ export default function EditSubscriptionScreen() {
     <AppScreen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          <PageHeader title="编辑订阅" subtitle={`订阅 ID：${id ?? ""}`} compact />
+          <PageHeader title="编辑订阅" subtitle={`订阅 ID：${id ?? ""}`} compact showMenu={false} />
 
           <Animated.View entering={FadeInUp.delay(40).duration(260)}>
             <MiaoCard style={styles.card}>
@@ -150,6 +160,15 @@ export default function EditSubscriptionScreen() {
               </View>
 
               <TextField label="备注" value={note} onChangeText={setNote} placeholder="备注" multiline />
+
+              <SubscriptionReminderFields
+                daysBefore={reminderDaysBefore}
+                enabled={reminderEnabled}
+                onChangeDaysBefore={setReminderDaysBefore}
+                onChangeEnabled={setReminderEnabled}
+                onChangeTime={setReminderTime}
+                time={reminderTime}
+              />
 
               <View style={styles.enableRow}>
                 <View>

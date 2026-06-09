@@ -1,12 +1,16 @@
-import { Link, Tabs } from "expo-router";
-import { BarChart3, Calculator, FileText, Plus, Repeat } from "lucide-react-native";
+import { router, Tabs } from "expo-router";
+import { BarChart3, FileText, PiggyBank, Plus, Repeat } from "lucide-react-native";
 import { StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedPressable } from "@/components/common/AnimatedPressable";
 import { defaultTheme } from "@/constants/themes";
 
 const iconSize = 22;
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(0, insets.bottom);
+
   return (
     <Tabs
       screenOptions={{
@@ -14,8 +18,16 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: defaultTheme.primary,
         tabBarInactiveTintColor: defaultTheme.muted,
+        tabBarIconStyle: styles.tabIcon,
+        tabBarItemStyle: styles.tabItem,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarStyle: styles.tabBar
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: 78 + bottomInset,
+            paddingBottom: Math.max(14, bottomInset + 4)
+          }
+        ]
       }}
     >
       <Tabs.Screen
@@ -37,19 +49,22 @@ export default function TabLayout() {
         options={{
           title: "",
           tabBarButton: () => (
-            <Link href="/record/new" asChild>
-              <AnimatedPressable accessibilityLabel="添加收支" pressedScale={0.9} style={styles.addButton}>
-                <Plus color="#FFFFFF" size={30} strokeWidth={3} />
-              </AnimatedPressable>
-            </Link>
+            <AnimatedPressable
+              accessibilityLabel="添加收支"
+              onPress={() => router.push("/record/new")}
+              pressedScale={0.9}
+              style={[styles.addButton, { bottom: 20 + bottomInset }]}
+            >
+              <Plus color="#FFFFFF" size={30} strokeWidth={3} />
+            </AnimatedPressable>
           )
         }}
       />
       <Tabs.Screen
-        name="exchange"
+        name="budget"
         options={{
-          title: "汇率计算",
-          tabBarIcon: ({ color }) => <Calculator color={color} size={iconSize} />
+          title: "预算分配",
+          tabBarIcon: ({ color }) => <PiggyBank color={color} size={iconSize} />
         }}
       />
       <Tabs.Screen
@@ -59,6 +74,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Repeat color={color} size={iconSize} />
         }}
       />
+      <Tabs.Screen name="exchange" options={{ href: null }} />
     </Tabs>
   );
 }
@@ -67,9 +83,7 @@ const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: "#FFFFFF",
     borderTopColor: "#DFF3FF",
-    height: 72,
-    paddingBottom: 10,
-    paddingTop: 8,
+    paddingTop: 10,
     position: "relative",
     shadowColor: "#8CCFEB",
     shadowOffset: { width: 0, height: -6 },
@@ -78,7 +92,18 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 11,
-    fontWeight: "800"
+    fontWeight: "800",
+    lineHeight: 15,
+    minHeight: 16
+  },
+  tabIcon: {
+    marginBottom: 2,
+    marginTop: 2
+  },
+  tabItem: {
+    justifyContent: "center",
+    minHeight: 54,
+    paddingVertical: 4
   },
   addButton: {
     alignItems: "center",
@@ -86,7 +111,6 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     borderRadius: 31,
     borderWidth: 5,
-    bottom: 18,
     height: 62,
     justifyContent: "center",
     left: "50%",

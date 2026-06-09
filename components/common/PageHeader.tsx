@@ -1,16 +1,16 @@
-import { Image, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Sparkles } from "lucide-react-native";
+import { MiaoMenuButton } from "@/components/common/MiaoMenuButton";
 import { defaultTheme } from "@/constants/themes";
-
-const stickerImage = require("../../assets/images/miao-stickers.png");
 
 interface PageHeaderProps {
   title: string;
   subtitle?: string;
   compact?: boolean;
+  showMenu?: boolean;
 }
 
-export function PageHeader({ title, subtitle, compact = false }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, compact = false, showMenu = true }: PageHeaderProps) {
   return (
     <View style={[styles.container, compact && styles.compact]}>
       <View style={styles.textBlock}>
@@ -21,7 +21,7 @@ export function PageHeader({ title, subtitle, compact = false }: PageHeaderProps
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      <Image source={stickerImage} style={styles.sticker} />
+      {showMenu ? <MiaoMenuButton /> : null}
     </View>
   );
 }
@@ -61,10 +61,5 @@ const styles = StyleSheet.create({
     color: defaultTheme.muted,
     fontSize: 13,
     lineHeight: 19
-  },
-  sticker: {
-    borderRadius: 8,
-    height: 72,
-    width: 72
   }
 });

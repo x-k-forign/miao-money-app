@@ -10,6 +10,7 @@ import { MiaoCard } from "@/components/common/MiaoCard";
 import { MiaoLoader } from "@/components/common/MiaoLoader";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DayOfMonthPicker } from "@/components/subscriptions/DayOfMonthPicker";
+import { SubscriptionReminderFields } from "@/components/subscriptions/SubscriptionReminderFields";
 import { defaultTheme } from "@/constants/themes";
 import { getCategories } from "@/services/categoryService";
 import { addSubscription } from "@/services/subscriptionService";
@@ -31,6 +32,9 @@ export default function NewSubscriptionScreen() {
   const [day, setDay] = useState(18);
   const [note, setNote] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderDaysBefore, setReminderDaysBefore] = useState(3);
+  const [reminderTime, setReminderTime] = useState("12:00");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -68,7 +72,10 @@ export default function NewSubscriptionScreen() {
         categoryId,
         dayOfMonth: day,
         enabled,
-        note
+        note,
+        reminderDaysBefore,
+        reminderEnabled,
+        reminderTime
       });
       requestRecordRefresh();
       requestRefresh();
@@ -84,7 +91,7 @@ export default function NewSubscriptionScreen() {
     <AppScreen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          <PageHeader title="添加订阅" subtitle="设置每月固定收入或支出" compact />
+          <PageHeader title="添加订阅" subtitle="设置每月固定收入或支出" compact showMenu={false} />
 
           <Animated.View entering={FadeInUp.delay(40).duration(260)}>
             <MiaoCard style={styles.card}>
@@ -128,6 +135,15 @@ export default function NewSubscriptionScreen() {
               </View>
 
               <TextField label="备注" value={note} onChangeText={setNote} placeholder="可选：例如同月只生成一次" multiline />
+
+              <SubscriptionReminderFields
+                daysBefore={reminderDaysBefore}
+                enabled={reminderEnabled}
+                onChangeDaysBefore={setReminderDaysBefore}
+                onChangeEnabled={setReminderEnabled}
+                onChangeTime={setReminderTime}
+                time={reminderTime}
+              />
 
               <View style={styles.enableRow}>
                 <View>

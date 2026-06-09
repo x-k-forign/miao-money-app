@@ -110,7 +110,7 @@ export default function EditRecordScreen() {
     <AppScreen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          <PageHeader title="编辑账单" subtitle={`记录 ID：${id ?? ""}`} compact />
+          <PageHeader title="编辑账单" subtitle={`记录 ID：${id ?? ""}`} compact showMenu={false} />
 
           <Animated.View entering={FadeInUp.delay(40).duration(260)}>
             <MiaoCard style={styles.card}>

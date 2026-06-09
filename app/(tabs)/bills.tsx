@@ -1,6 +1,6 @@
 import { Link } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { ArrowDownRight, ArrowUpRight, CalendarDays, Check, ChevronDown, Edit3, Trash2, WalletCards } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/common/AnimatedPressable";
@@ -8,14 +8,17 @@ import { AppScreen } from "@/components/common/AppScreen";
 import { CategoryIcon } from "@/components/common/CategoryIcon";
 import { MiaoCard } from "@/components/common/MiaoCard";
 import { MiaoLoader } from "@/components/common/MiaoLoader";
+import { PageStepper } from "@/components/common/PageStepper";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatCard } from "@/components/common/StatCard";
 import { defaultTheme } from "@/constants/themes";
-import { deleteRecordById, getMonthlyRecords, getRecordsByDate } from "@/services/recordService";
+import { deleteAllRecordRows, deleteRecordById, getMonthlyRecords, getRecordsByDate } from "@/services/recordService";
 import { useRecordStore } from "@/stores/useRecordStore";
 import type { RecordDTO } from "@/types/models";
 import { getDateOptions, getMonthOptions, getTodayDateString } from "@/utils/date";
 import { centsToYuan } from "@/utils/money";
+
+const RECORD_PAGE_SIZE = 20;
 
 function money(cents: number) {
   return `¥${centsToYuan(cents)}`;
@@ -43,6 +46,7 @@ export default function BillsScreen() {
   const [records, setRecords] = useState<RecordDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<"month" | "date">("month");
+  const [recordPage, setRecordPage] = useState(0);
   const monthOptions = useMemo(() => getMonthOptions(), []);
   const [selectedMonth, setSelectedMonth] = useState(monthOptions[0]);
   const dateOptions = useMemo(() => getDateOptions(selectedMonth), [selectedMonth]);
@@ -74,6 +78,10 @@ export default function BillsScreen() {
   }, [mode, refreshKey, selectedDate, selectedMonth]);
 
   useEffect(() => {
+    setRecordPage(0);
+  }, [mode, selectedDate, selectedMonth]);
+
+  useEffect(() => {
     if (!dateOptions.includes(selectedDate)) {
       setSelectedDate(dateOptions[0]);
     }
@@ -85,11 +93,59 @@ export default function BillsScreen() {
     return { balance: income - expense, expense, income };
   }, [records]);
 
-  const grouped = useMemo(() => groupRecords(records), [records]);
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(records.length / RECORD_PAGE_SIZE)), [records.length]);
+  const safeRecordPage = Math.min(recordPage, pageCount - 1);
+  const visibleRecords = useMemo(
+    () => records.slice(safeRecordPage * RECORD_PAGE_SIZE, safeRecordPage * RECORD_PAGE_SIZE + RECORD_PAGE_SIZE),
+    [records, safeRecordPage]
+  );
+  const grouped = useMemo(() => groupRecords(visibleRecords), [visibleRecords]);
+
+  useEffect(() => {
+    if (recordPage > pageCount - 1) {
+      setRecordPage(Math.max(0, pageCount - 1));
+    }
+  }, [pageCount, recordPage]);
 
   async function removeRecord(id: string) {
     await deleteRecordById(id);
     requestRefresh();
+  }
+
+  async function clearAllRecords() {
+    await deleteAllRecordRows();
+    setRecords([]);
+    setRecordPage(0);
+    requestRefresh();
+  }
+
+  function confirmClearAllRecords() {
+    if (Platform.OS === "web") {
+      const confirmed =
+        typeof window === "undefined"
+          ? true
+          : window.confirm("会删除 Web 测试端全部手动、订阅生成和导入账单，分类、订阅和预算设置不会删除。");
+
+      if (confirmed) {
+        clearAllRecords().catch((error) => {
+          console.warn("Clear all records failed", error);
+        });
+      }
+      return;
+    }
+
+    Alert.alert("清空所有账单", "会删除本机全部手动、订阅生成和导入账单，分类、订阅和预算设置不会删除。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "清空",
+        style: "destructive",
+        onPress: () => {
+          clearAllRecords().catch((error) => {
+            console.warn("Clear all records failed", error);
+          });
+        }
+      }
+    ]);
   }
 
   if (loading) {
@@ -152,13 +208,23 @@ export default function BillsScreen() {
               options={mode === "month" ? monthOptions : dateOptions}
               value={mode === "month" ? selectedMonth : selectedDate}
             />
+            <AnimatedPressable onPress={confirmClearAllRecords} style={styles.clearAllButton}>
+              <Trash2 color={defaultTheme.pink} size={16} />
+              <Text style={styles.clearAllText}>清空所有账单</Text>
+            </AnimatedPressable>
           </MiaoCard>
         </Animated.View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{mode === "month" ? formatMonthLabel(selectedMonth) : selectedDate}</Text>
-          <Text style={styles.sectionMeta}>{records.length} 笔</Text>
+          <Text style={styles.sectionMeta}>
+            {records.length > RECORD_PAGE_SIZE
+              ? `${safeRecordPage * RECORD_PAGE_SIZE + 1}-${Math.min(records.length, (safeRecordPage + 1) * RECORD_PAGE_SIZE)} / ${records.length} 笔`
+              : `${records.length} 笔`}
+          </Text>
         </View>
+
+        <PageStepper page={safeRecordPage} pageSize={RECORD_PAGE_SIZE} total={records.length} onChange={setRecordPage} />
 
         {Object.entries(grouped).map(([date, items], groupIndex) => (
           <Animated.View key={date} entering={FadeInUp.delay(120 + groupIndex * 45).duration(260)} style={styles.dayGroup}>
@@ -180,7 +246,7 @@ export default function BillsScreen() {
                 </View>
                 <View style={styles.recordActions}>
                   <View style={styles.sourceTag}>
-                    <Text style={styles.sourceText}>{record.source === "manual" ? "手动添加" : "订阅生成"}</Text>
+                    <Text style={styles.sourceText}>{getSourceLabel(record.source)}</Text>
                   </View>
                   <View style={styles.actionButtons}>
                     <Link href={`/record/${record.id}/edit`} asChild>
@@ -204,6 +270,14 @@ export default function BillsScreen() {
       </ScrollView>
     </AppScreen>
   );
+}
+
+function getSourceLabel(source: RecordDTO["source"]): string {
+  if (source === "import") {
+    return "导入账单";
+  }
+
+  return source === "manual" ? "手动添加" : "订阅生成";
 }
 
 interface BillRangePickerProps {
@@ -351,6 +425,24 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     minHeight: 58,
     paddingHorizontal: 12
+  },
+  clearAllButton: {
+    alignItems: "center",
+    alignSelf: "flex-end",
+    backgroundColor: "#FFEAF2",
+    borderColor: "#FFD1DF",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingHorizontal: 12
+  },
+  clearAllText: {
+    color: defaultTheme.pink,
+    fontSize: 12,
+    fontWeight: "900"
   },
   pickerLeft: {
     alignItems: "center",

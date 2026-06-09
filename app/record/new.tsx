@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
-import { Check, X } from "lucide-react-native";
+import { Check, FileUp, X } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/common/AnimatedPressable";
 import { AppScreen } from "@/components/common/AppScreen";
 import { CategoryIcon } from "@/components/common/CategoryIcon";
@@ -110,10 +110,20 @@ export default function NewRecordScreen() {
     <AppScreen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          <PageHeader title="添加收支" subtitle="快速记录一笔收入或支出" compact />
+          <PageHeader title="添加收支" subtitle="快速记录一笔收入或支出" compact showMenu={false} />
 
           <Animated.View entering={FadeInUp.delay(40).duration(260)}>
             <MiaoCard style={styles.card}>
+              <AnimatedPressable accessibilityLabel="导入账单" onPress={() => router.push("/import" as never)} style={styles.importEntry}>
+                <View style={styles.importIcon}>
+                  <FileUp color={defaultTheme.primary} size={20} />
+                </View>
+                <View style={styles.importTextBlock}>
+                  <Text style={styles.importTitle}>导入账单</Text>
+                  <Text style={styles.importHint}>微信 XLSX、支付宝 CSV</Text>
+                </View>
+              </AnimatedPressable>
+
               <View style={styles.segment}>
                 {[
                   { key: "expense", label: "支出" },
@@ -216,6 +226,39 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: 16
+  },
+  importEntry: {
+    alignItems: "center",
+    backgroundColor: "#F7FCFF",
+    borderColor: "#DFF3FF",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 68,
+    paddingHorizontal: 12
+  },
+  importIcon: {
+    alignItems: "center",
+    backgroundColor: defaultTheme.primarySoft,
+    borderRadius: 8,
+    height: 42,
+    justifyContent: "center",
+    width: 42
+  },
+  importTextBlock: {
+    flex: 1,
+    gap: 3
+  },
+  importTitle: {
+    color: defaultTheme.text,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  importHint: {
+    color: defaultTheme.muted,
+    fontSize: 12,
+    fontWeight: "800"
   },
   segment: {
     backgroundColor: defaultTheme.primarySoft,

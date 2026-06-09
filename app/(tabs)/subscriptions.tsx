@@ -23,6 +23,7 @@ export default function SubscriptionsScreen() {
   const { refreshKey, requestRefresh } = useSubscriptionStore();
   const requestRecordRefresh = useRecordStore((state) => state.requestRefresh);
   const [subscriptions, setSubscriptions] = useState<SubscriptionDTO[]>([]);
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -51,9 +52,28 @@ export default function SubscriptionsScreen() {
   );
 
   async function toggleEnabled(id: string, enabled: boolean) {
-    await toggleSubscriptionEnabled(id, enabled);
-    requestRecordRefresh();
-    requestRefresh();
+    if (togglingIds.has(id)) {
+      return;
+    }
+
+    const previousSubscriptions = subscriptions;
+    setTogglingIds((current) => new Set(current).add(id));
+    setSubscriptions((current) => current.map((item) => (item.id === id ? { ...item, enabled } : item)));
+
+    try {
+      await toggleSubscriptionEnabled(id, enabled);
+      requestRecordRefresh();
+      requestRefresh();
+    } catch (error) {
+      console.warn("Toggle subscription failed", error);
+      setSubscriptions(previousSubscriptions);
+    } finally {
+      setTogglingIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   async function removeSubscription(id: string) {
@@ -116,11 +136,18 @@ export default function SubscriptionsScreen() {
                   <CalendarClock color={defaultTheme.primary} size={14} />
                   <Text style={styles.metaText}>每月 {item.dayOfMonth} 号</Text>
                 </View>
+                <View style={[styles.metaPill, item.reminderEnabled === false && styles.metaPillMuted]}>
+                  <Bell color={item.reminderEnabled === false ? defaultTheme.muted : defaultTheme.pink} size={14} />
+                  <Text style={styles.metaText}>
+                    {item.reminderEnabled === false ? "不提醒" : `提前 ${item.reminderDaysBefore ?? 3} 天 ${item.reminderTime ?? "12:00"}`}
+                  </Text>
+                </View>
                 <View style={styles.actions}>
                   <AnimatedPressable
                     accessibilityLabel={item.enabled ? "关闭订阅" : "启用订阅"}
+                    disabled={togglingIds.has(item.id)}
                     onPress={() => toggleEnabled(item.id, !item.enabled)}
-                    style={[styles.toggle, item.enabled && styles.toggleOn]}
+                    style={[styles.toggle, item.enabled && styles.toggleOn, togglingIds.has(item.id) && styles.toggleBusy]}
                   >
                     <View style={[styles.toggleKnob, item.enabled && styles.toggleKnobOn]} />
                   </AnimatedPressable>
@@ -142,13 +169,6 @@ export default function SubscriptionsScreen() {
           </Animated.View>
         ))}
 
-        <MiaoCard style={styles.reminderCard}>
-          <Bell color={defaultTheme.pink} size={20} />
-          <View style={styles.reminderText}>
-            <Text style={styles.reminderTitle}>提醒功能已预留</Text>
-            <Text style={styles.reminderBody}>后续可添加提前几天提醒、提醒时间和同月只提醒一次。</Text>
-          </View>
-        </MiaoCard>
       </ScrollView>
     </AppScreen>
   );
@@ -268,9 +288,17 @@ const styles = StyleSheet.create({
     color: "#F07FA4"
   },
   subscriptionMeta: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
+    gap: 8,
     justifyContent: "space-between"
+  },
+  metaPills: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    minWidth: 0
   },
   metaPill: {
     alignItems: "center",
@@ -286,8 +314,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900"
   },
+  metaPillMuted: {
+    backgroundColor: "#F7FCFF"
+  },
   actions: {
     alignItems: "center",
+    flexShrink: 0,
     flexDirection: "row",
     gap: 8
   },
@@ -301,6 +333,9 @@ const styles = StyleSheet.create({
   },
   toggleOn: {
     backgroundColor: defaultTheme.primary
+  },
+  toggleBusy: {
+    opacity: 0.55
   },
   toggleKnob: {
     backgroundColor: "#FFFFFF",
@@ -319,24 +354,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 34
   },
-  reminderCard: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 4
-  },
-  reminderText: {
-    flex: 1,
-    gap: 3
-  },
-  reminderTitle: {
-    color: defaultTheme.text,
-    fontSize: 14,
-    fontWeight: "900"
-  },
-  reminderBody: {
-    color: defaultTheme.muted,
-    fontSize: 12,
-    lineHeight: 17
-  }
 });

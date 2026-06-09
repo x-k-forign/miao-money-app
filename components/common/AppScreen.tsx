@@ -1,5 +1,5 @@
 import { SafeAreaView } from "react-native-safe-area-context";
-import { StyleSheet, View, type ViewProps } from "react-native";
+import { StyleSheet, type ViewProps } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { defaultTheme } from "@/constants/themes";
 
@@ -24,11 +24,14 @@ export function AppScreen({ children, padded = true, style, ...props }: AppScree
 
 const styles = StyleSheet.create({
   safeArea: {
+    alignItems: "center",
     backgroundColor: defaultTheme.background,
     flex: 1
   },
   content: {
-    flex: 1
+    flex: 1,
+    maxWidth: 760,
+    width: "100%"
   },
   padded: {
     paddingHorizontal: 18,

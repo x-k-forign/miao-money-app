@@ -1,78 +1,31 @@
 import type { CategorySeed } from "@/types/models";
 
-const expenseNames = [
-  "餐饮",
-  "购物",
-  "交通",
-  "运动",
-  "娱乐",
-  "通讯",
-  "住房",
-  "孩子",
-  "旅行",
-  "汽车",
-  "医疗",
-  "学习",
-  "宠物",
-  "礼金",
-  "维修",
-  "快递",
-  "电影",
-  "日用品",
-  "化妆品",
-  "其他"
-];
-
-const incomeNames = ["工资", "兼职", "奖金", "红包", "投资", "退款", "其他收入"];
-
-const palette = [
-  "#72C8F3",
-  "#FFB8D2",
-  "#BDEDD8",
-  "#FFE8A9",
-  "#C9B7FF",
-  "#9ED9FF",
-  "#FFC7A8"
-];
-
-const expenseIcons = [
-  "utensils",
-  "bag",
-  "bus",
-  "dumbbell",
-  "ticket",
-  "phone",
-  "home",
-  "baby",
-  "plane",
-  "car",
-  "heart",
-  "book",
-  "paw",
-  "gift",
-  "wrench",
-  "package",
-  "film",
-  "sparkles",
-  "palette",
-  "more"
-];
-
 export const defaultCategories: CategorySeed[] = [
-  ...expenseNames.map((name, index) => ({
-    id: `expense-${index + 1}`,
-    name,
-    kind: "expense" as const,
-    icon: expenseIcons[index] ?? "sparkles",
-    color: palette[index % palette.length],
-    sortOrder: index + 1
-  })),
-  ...incomeNames.map((name, index) => ({
-    id: `income-${index + 1}`,
-    name,
-    kind: "income" as const,
-    icon: index === 0 ? "wallet" : "sparkles",
-    color: palette[index % palette.length],
-    sortOrder: index + 1
-  }))
+  { id: "expense-1", name: "餐饮", kind: "expense", icon: "utensils", color: "#72C8F3", sortOrder: 1 },
+  { id: "expense-2", name: "购物", kind: "expense", icon: "bag", color: "#FFB8D2", sortOrder: 2 },
+  { id: "expense-3", name: "交通", kind: "expense", icon: "bus", color: "#BDEDD8", sortOrder: 3 },
+  { id: "expense-10", name: "汽车", kind: "expense", icon: "car", color: "#72C8F3", sortOrder: 4 },
+  { id: "expense-7", name: "居家", kind: "expense", icon: "home", color: "#FFE8A9", sortOrder: 5 },
+  { id: "expense-6", name: "通讯订阅", kind: "expense", icon: "phone", color: "#9ED9FF", sortOrder: 6 },
+  { id: "expense-11", name: "医疗", kind: "expense", icon: "heart", color: "#FFB8D2", sortOrder: 7 },
+  { id: "expense-12", name: "学习办公", kind: "expense", icon: "book", color: "#C9B7FF", sortOrder: 8 },
+  { id: "expense-5", name: "娱乐", kind: "expense", icon: "ticket", color: "#C9B7FF", sortOrder: 9 },
+  { id: "expense-9", name: "旅行", kind: "expense", icon: "plane", color: "#BDEDD8", sortOrder: 10 },
+  { id: "expense-8", name: "家庭宠物", kind: "expense", icon: "baby", color: "#FFC7A8", sortOrder: 11 },
+  { id: "expense-14", name: "社交", kind: "expense", icon: "gift", color: "#FFE8A9", sortOrder: 12 },
+  { id: "expense-credit", name: "金融", kind: "expense", icon: "refresh", color: "#9ED9FF", sortOrder: 13 },
+  { id: "expense-lifestyle", name: "生活服务", kind: "expense", icon: "sparkles", color: "#BDEDD8", sortOrder: 14 },
+  { id: "expense-donation", name: "公益", kind: "expense", icon: "heart", color: "#BDEDD8", sortOrder: 15 },
+  { id: "expense-20", name: "其他", kind: "expense", icon: "more", color: "#FFC7A8", sortOrder: 16 },
+  { id: "income-1", name: "工资", kind: "income", icon: "wallet", color: "#72C8F3", sortOrder: 1 },
+  { id: "income-2", name: "兼职", kind: "income", icon: "briefcase", color: "#BDEDD8", sortOrder: 2 },
+  { id: "income-3", name: "奖金", kind: "income", icon: "sparkles", color: "#FFB8D2", sortOrder: 3 },
+  { id: "income-4", name: "红包", kind: "income", icon: "gift", color: "#FFE8A9", sortOrder: 4 },
+  { id: "income-5", name: "投资", kind: "income", icon: "trending", color: "#C9B7FF", sortOrder: 5 },
+  { id: "income-6", name: "退款", kind: "income", icon: "refresh", color: "#9ED9FF", sortOrder: 6 },
+  { id: "income-resale", name: "二手转卖", kind: "income", icon: "bag", color: "#BDEDD8", sortOrder: 7 },
+  { id: "income-collection", name: "收款", kind: "income", icon: "wallet", color: "#72C8F3", sortOrder: 8 },
+  { id: "income-7", name: "其他", kind: "income", icon: "more", color: "#FFC7A8", sortOrder: 9 }
 ];
+
+export const activeDefaultCategoryIds = defaultCategories.map((category) => category.id);

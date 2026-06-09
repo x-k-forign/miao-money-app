@@ -19,7 +19,7 @@ export async function deleteSubscription(id: string): Promise<void> {
 }
 
 export async function listSubscriptions(): Promise<Subscription[]> {
-  return db.select().from(subscriptions).orderBy(desc(subscriptions.enabled), subscriptions.dayOfMonth);
+  return db.select().from(subscriptions).orderBy(subscriptions.dayOfMonth, desc(subscriptions.createdAt));
 }
 
 export async function listSubscriptionDTOs(): Promise<SubscriptionDTO[]> {
@@ -38,12 +38,16 @@ export async function listSubscriptionDTOs(): Promise<SubscriptionDTO[]> {
         enabled: subscriptions.enabled,
         note: subscriptions.note,
         lastGeneratedMonth: subscriptions.lastGeneratedMonth,
+        reminderEnabled: subscriptions.reminderEnabled,
+        reminderDaysBefore: subscriptions.reminderDaysBefore,
+        reminderTime: subscriptions.reminderTime,
+        lastRemindedMonth: subscriptions.lastRemindedMonth,
         createdAt: subscriptions.createdAt,
         updatedAt: subscriptions.updatedAt
       })
       .from(subscriptions)
       .innerJoin(categories, eq(subscriptions.categoryId, categories.id))
-      .orderBy(desc(subscriptions.enabled), subscriptions.dayOfMonth)
+      .orderBy(subscriptions.dayOfMonth, desc(subscriptions.createdAt))
   );
 }
 
@@ -63,6 +67,10 @@ export async function findSubscriptionDTOById(id: string): Promise<SubscriptionD
         enabled: subscriptions.enabled,
         note: subscriptions.note,
         lastGeneratedMonth: subscriptions.lastGeneratedMonth,
+        reminderEnabled: subscriptions.reminderEnabled,
+        reminderDaysBefore: subscriptions.reminderDaysBefore,
+        reminderTime: subscriptions.reminderTime,
+        lastRemindedMonth: subscriptions.lastRemindedMonth,
         createdAt: subscriptions.createdAt,
         updatedAt: subscriptions.updatedAt
       })
@@ -89,6 +97,10 @@ function mapSubscriptionRows(
     enabled: boolean;
     note: string | null;
     lastGeneratedMonth: string | null;
+    reminderEnabled: boolean;
+    reminderDaysBefore: number | null;
+    reminderTime: string | null;
+    lastRemindedMonth: string | null;
     createdAt: string;
     updatedAt: string;
   }>
