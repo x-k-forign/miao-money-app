@@ -14,8 +14,9 @@ export function createImportDedupeHash(draft: ImportRecordDraftDTO): string {
     [
       draft.provider,
       draft.externalTradeNo ?? "",
+      draft.merchantOrderNo ?? "",
       draft.recordDate,
-      draft.type,
+      draft.transactionKind,
       draft.amountCents,
       normalizeText(draft.merchantName ?? ""),
       normalizeText(draft.note)
@@ -29,12 +30,17 @@ export async function checkImportedRecordDuplicate(
   const dedupeHash = draft.dedupeHash ?? createImportDedupeHash(draft);
 
   if (Platform.OS !== "web") {
+    await ensureNativeDatabaseReady();
     const { findImportRecordByDedupeHash, findImportRecordByTradeNo, findPossibleDuplicateRecords } = await import(
       "@/db/queries/records"
     );
 
     if (draft.externalTradeNo) {
-      const tradeRecord = await findImportRecordByTradeNo(draft.provider, draft.externalTradeNo);
+      const tradeRecord = await findImportRecordByTradeNo(
+        draft.provider,
+        draft.externalTradeNo,
+        draft.transactionKind
+      );
       if (tradeRecord) {
         return {
           duplicateRecordId: tradeRecord.id,
@@ -66,7 +72,8 @@ export async function checkImportedRecordDuplicate(
       (record) =>
         record.source === "import" &&
         record.importProvider === draft.provider &&
-        record.externalTradeNo === draft.externalTradeNo
+        record.externalTradeNo === draft.externalTradeNo &&
+        (record.transactionKind ?? record.type) === draft.transactionKind
     );
     if (tradeRecord) {
       return {
@@ -93,13 +100,38 @@ function resolvePossibleDuplicate(
   draft: ImportRecordDraftDTO,
   records: RecordDTO[]
 ): DuplicateCheckResult {
-  const sameDayAmount = records.find(
-    (record) =>
-      record.recordDate === draft.recordDate &&
-      record.amountCents === draft.amountCents &&
-      record.type === draft.type &&
-      similarText(draft, record)
+  const comparable = records
+    .filter(
+      (record) =>
+        record.amountCents === draft.amountCents &&
+        record.type === draft.type &&
+        (record.transactionKind ?? record.type) === draft.transactionKind
+    )
+    .map((record) => ({
+      dayDistance: getDayDistance(draft.recordDate, record.recordDate),
+      record,
+      similarity: textSimilarity(draft, record)
+    }));
+  const confirmed = comparable.find(
+    (candidate) =>
+      candidate.dayDistance === 0 &&
+      candidate.similarity >= 0.82
+  ) ?? comparable.find(
+    (candidate) =>
+      candidate.dayDistance <= 1 &&
+      candidate.similarity >= 0.92
   );
+  if (confirmed) {
+    return {
+      duplicateRecordId: confirmed.record.id,
+      level: "confirmed",
+      reason: "同日同金额且商户或备注高度一致，已自动跳过"
+    };
+  }
+
+  const sameDayAmount = comparable.find(
+    (candidate) => candidate.dayDistance === 0 && candidate.similarity >= 0.45
+  )?.record;
   if (sameDayAmount) {
     return {
       duplicateRecordId: sameDayAmount.id,
@@ -108,13 +140,12 @@ function resolvePossibleDuplicate(
     };
   }
 
-  const nearDayAmount = records.find(
-    (record) =>
-      record.recordDate !== draft.recordDate &&
-      record.amountCents === draft.amountCents &&
-      record.type === draft.type &&
-      similarText(draft, record)
-  );
+  const nearDayAmount = comparable.find(
+    (candidate) =>
+      candidate.dayDistance > 0 &&
+      candidate.dayDistance <= 1 &&
+      candidate.similarity >= 0.45
+  )?.record;
   if (nearDayAmount) {
     return {
       duplicateRecordId: nearDayAmount.id,
@@ -128,14 +159,22 @@ function resolvePossibleDuplicate(
   };
 }
 
-function similarText(draft: ImportRecordDraftDTO, record: RecordDTO): boolean {
+function textSimilarity(draft: ImportRecordDraftDTO, record: RecordDTO): number {
   const sourceText = normalizeText(`${draft.merchantName ?? ""} ${draft.note}`);
   const targetText = normalizeText(`${record.merchantName ?? ""} ${record.note}`);
   if (!sourceText || !targetText) {
-    return false;
+    return 0;
   }
 
-  return sourceText.includes(targetText) || targetText.includes(sourceText) || overlapRatio(sourceText, targetText) >= 0.45;
+  if (sourceText === targetText || sourceText.includes(targetText) || targetText.includes(sourceText)) {
+    return 1;
+  }
+
+  return overlapRatio(sourceText, targetText);
+}
+
+function getDayDistance(left: string, right: string): number {
+  return Math.abs((Date.parse(left) - Date.parse(right)) / (24 * 60 * 60 * 1000));
 }
 
 function getDateCandidates(recordDate: string): string[] {
@@ -162,4 +201,13 @@ function simpleHash(value: string): string {
   }
 
   return `h_${(hash >>> 0).toString(16)}`;
+}
+
+async function ensureNativeDatabaseReady(): Promise<void> {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  const { initializeDatabase } = await import("@/db/init");
+  await initializeDatabase();
 }

@@ -17,6 +17,7 @@ import { useRecordStore } from "@/stores/useRecordStore";
 import type { RecordDTO } from "@/types/models";
 import { getDateOptions, getMonthOptions, getTodayDateString } from "@/utils/date";
 import { centsToYuan } from "@/utils/money";
+import { summarizeRecords } from "@/services/analysisService";
 
 const RECORD_PAGE_SIZE = 20;
 
@@ -88,9 +89,12 @@ export default function BillsScreen() {
   }, [dateOptions, selectedDate]);
 
   const summary = useMemo(() => {
-    const income = records.filter((item) => item.type === "income").reduce((sum, item) => sum + item.amountCents, 0);
-    const expense = records.filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amountCents, 0);
-    return { balance: income - expense, expense, income };
+    const result = summarizeRecords(records);
+    return {
+      balance: result.balanceCents,
+      expense: result.expenseCents,
+      income: result.incomeCents
+    };
   }, [records]);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(records.length / RECORD_PAGE_SIZE)), [records.length]);

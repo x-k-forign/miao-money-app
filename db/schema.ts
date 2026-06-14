@@ -8,6 +8,7 @@ import type {
   ImportFileType,
   ImportProvider,
   ImportRowStatus,
+  ImportTransactionKind,
   RecordSource,
   RecordType,
   ThemeName
@@ -87,8 +88,11 @@ export const records = sqliteTable(
     importBatchId: text("import_batch_id"),
     importProvider: text("import_provider").$type<ImportProvider>(),
     externalTradeNo: text("external_trade_no"),
+    merchantOrderNo: text("merchant_order_no"),
     merchantName: text("merchant_name"),
     dedupeHash: text("dedupe_hash"),
+    transactionKind: text("transaction_kind").$type<ImportTransactionKind>(),
+    relatedRecordId: text("related_record_id"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`)
   },
@@ -99,12 +103,14 @@ export const records = sqliteTable(
     index("records_subscription_month_idx").on(table.subscriptionId, table.recordMonth, table.source),
     index("records_import_batch_idx").on(table.importBatchId),
     index("records_import_provider_trade_idx").on(table.importProvider, table.externalTradeNo),
+    index("records_import_provider_merchant_order_idx").on(table.importProvider, table.merchantOrderNo),
     index("records_dedupe_hash_idx").on(table.dedupeHash),
+    index("records_related_record_idx").on(table.relatedRecordId),
     uniqueIndex("records_subscription_month_unique_idx")
       .on(table.subscriptionId, table.recordMonth, table.source)
       .where(sql`${table.source} = 'subscription' AND ${table.subscriptionId} IS NOT NULL`),
     uniqueIndex("records_import_trade_unique_idx")
-      .on(table.importProvider, table.externalTradeNo)
+      .on(table.importProvider, table.externalTradeNo, table.transactionKind)
       .where(sql`${table.source} = 'import' AND ${table.importProvider} IS NOT NULL AND ${table.externalTradeNo} IS NOT NULL`),
     uniqueIndex("records_dedupe_hash_unique_idx")
       .on(table.dedupeHash)
@@ -123,6 +129,10 @@ export const records = sqliteTable(
     check(
       "records_import_source_check",
       sql`${table.source} <> 'import' OR ${table.importProvider} IN ('wechat', 'alipay', 'bank')`
+    ),
+    check(
+      "records_transaction_kind_check",
+      sql`${table.transactionKind} IS NULL OR ${table.transactionKind} IN ('expense', 'income', 'transfer', 'refund', 'ignore')`
     )
   ]
 );
@@ -164,11 +174,13 @@ export const importRows = sqliteTable(
     recordDate: text("record_date").notNull(),
     merchantName: text("merchant_name"),
     externalTradeNo: text("external_trade_no"),
+    merchantOrderNo: text("merchant_order_no"),
     note: text("note"),
     categoryId: text("category_id").references(() => categories.id),
     confidence: integer("confidence").notNull().default(0),
     duplicateRecordId: text("duplicate_record_id").references(() => records.id, { onDelete: "set null" }),
     dedupeHash: text("dedupe_hash"),
+    transactionKind: text("transaction_kind").$type<ImportTransactionKind>().notNull(),
     errorMessage: text("error_message"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`)
@@ -176,12 +188,17 @@ export const importRows = sqliteTable(
   (table) => [
     index("import_rows_batch_status_idx").on(table.batchId, table.status),
     index("import_rows_trade_idx").on(table.externalTradeNo),
+    index("import_rows_merchant_order_idx").on(table.merchantOrderNo),
     index("import_rows_dedupe_hash_idx").on(table.dedupeHash),
     check(
       "import_rows_status_check",
       sql`${table.status} IN ('pending', 'ready', 'error', 'duplicate', 'skipped', 'imported')`
     ),
     check("import_rows_type_check", sql`${table.type} IN ('income', 'expense')`),
+    check(
+      "import_rows_transaction_kind_check",
+      sql`${table.transactionKind} IN ('expense', 'income', 'transfer', 'refund', 'ignore')`
+    ),
     check("import_rows_amount_nonnegative_check", sql`${table.amountCents} >= 0`),
     check("import_rows_confidence_check", sql`${table.confidence} BETWEEN 0 AND 100`)
   ]

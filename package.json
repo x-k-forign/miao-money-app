@@ -1,6 +1,6 @@
 {
   "name": "miao-money",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -10,6 +10,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "verify:import-rules": "node scripts/verify-import-rules.cjs",
+    "verify:wechat-reconcile": "node scripts/reconcile-wechat-month.cjs",
+    "verify:alipay-reconcile": "node scripts/reconcile-alipay-months.cjs",
     "drizzle:generate": "drizzle-kit generate",
     "drizzle:studio": "drizzle-kit studio"
   },

@@ -1,7 +1,7 @@
 import type { BudgetAllocationDTO, MonthlyBudgetDTO } from "@/types/models";
 import { Platform } from "react-native";
 import { getCategories } from "@/services/categoryService";
-import { getMonthlyRecords } from "@/services/recordService";
+import { getMonthlyRecords, getRecordById } from "@/services/recordService";
 import { getSubscriptions } from "@/services/subscriptionService";
 import { createLocalId } from "@/utils/id";
 
@@ -47,6 +47,7 @@ export async function generateMonthlyBudgetPlan(
     .forEach((item) => {
       previousExpenseByCategory.set(item.categoryId, (previousExpenseByCategory.get(item.categoryId) ?? 0) + item.amountCents);
     });
+  await applyRefundsToCategoryTotals(previousRecords, previousExpenseByCategory);
 
   const currentSpentByCategory = new Map<string, number>();
   currentRecords
@@ -54,6 +55,7 @@ export async function generateMonthlyBudgetPlan(
     .forEach((item) => {
       currentSpentByCategory.set(item.categoryId, (currentSpentByCategory.get(item.categoryId) ?? 0) + item.amountCents);
     });
+  await applyRefundsToCategoryTotals(currentRecords, currentSpentByCategory);
 
   const fixedTotal = Array.from(fixedByCategory.values()).reduce((sum, value) => sum + value, 0);
   const flexiblePool = Math.max(0, availableBudgetCents - fixedTotal);
@@ -104,6 +106,7 @@ export async function saveMonthlyBudgetPlan(plan: MonthlyBudgetDTO): Promise<voi
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { findRawMonthlyBudgetByMonth, upsertMonthlyBudget, replaceBudgetAllocations } = await import("@/db/queries/budgets");
   const existingBudget = await findRawMonthlyBudgetByMonth(plan.month);
   const budgetId = existingBudget?.id ?? (plan.id.startsWith("budget-draft-") ? createLocalId("budget") : plan.id);
@@ -136,6 +139,7 @@ export async function getSavedMonthlyBudget(month: string): Promise<MonthlyBudge
     return webBudgets.get(month);
   }
 
+  await ensureNativeDatabaseReady();
   const { findMonthlyBudgetByMonth } = await import("@/db/queries/budgets");
   return findMonthlyBudgetByMonth(month);
 }
@@ -324,8 +328,27 @@ async function getCurrentSpentByCategory(month: string): Promise<Map<string, num
     .forEach((item) => {
       currentSpentByCategory.set(item.categoryId, (currentSpentByCategory.get(item.categoryId) ?? 0) + item.amountCents);
     });
+  await applyRefundsToCategoryTotals(currentRecords, currentSpentByCategory);
 
   return currentSpentByCategory;
+}
+
+async function applyRefundsToCategoryTotals(
+  records: Awaited<ReturnType<typeof getMonthlyRecords>>,
+  totals: Map<string, number>
+): Promise<void> {
+  const refunds = records.filter(
+    (record) =>
+      (record.transactionKind === "refund" || (record.source === "import" && record.categoryName === "退款")) &&
+      record.relatedRecordId
+  );
+  const sources = await Promise.all(refunds.map((refund) => getRecordById(refund.relatedRecordId as string)));
+  refunds.forEach((refund, index) => {
+    const source = sources[index];
+    if (source) {
+      totals.set(source.categoryId, Math.max(0, (totals.get(source.categoryId) ?? 0) - refund.amountCents));
+    }
+  });
 }
 
 function buildIncomeTierWeights(
@@ -670,4 +693,13 @@ function priorityOrder(priority: BudgetAllocationDTO["priority"]): number {
   };
 
   return order[priority];
+}
+
+async function ensureNativeDatabaseReady(): Promise<void> {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  const { initializeDatabase } = await import("@/db/init");
+  await initializeDatabase();
 }

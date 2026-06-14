@@ -2,8 +2,14 @@ import * as DocumentPicker from "expo-document-picker";
 import { Platform } from "react-native";
 import type { ImportBatchDTO, ImportFileSelectionDTO, ImportFileType, ImportProvider, ImportRecordDraftDTO } from "@/types/models";
 import { createImportDedupeHash, checkImportedRecordDuplicate } from "@/services/duplicateRecordService";
-import { createImportedRecord, createImportedRecords, type SaveImportRecordInput } from "@/services/recordService";
+import {
+  createImportedRecord,
+  createImportedRecords,
+  findRefundSourceRecord,
+  type SaveImportRecordInput
+} from "@/services/recordService";
 import { getCategories } from "@/services/categoryService";
+import { findRefundSourceCandidate } from "@/services/refundMatchingService";
 import { getNowISOString } from "@/utils/date";
 import { createLocalId } from "@/utils/id";
 
@@ -88,10 +94,13 @@ export async function confirmImportBatch(input: ConfirmImportBatchInput): Promis
     normalizeImportDraft(draft, draft.type === "income" ? incomeCategories : expenseCategories)
   );
   const importableDrafts = normalizedDrafts.filter((draft) => draft.status === "ready");
+  const initialDuplicateRows = normalizedDrafts.filter((draft) => draft.status === "duplicate").length;
   let importedRows = 0;
-  let duplicateRows = normalizedDrafts.filter((draft) => draft.status === "duplicate").length;
+  let duplicateRows = initialDuplicateRows;
+  let duplicateRowsDuringConfirm = 0;
 
   if (Platform.OS !== "web") {
+    await ensureNativeDatabaseReady();
     const { createImportBatch, createImportRows, updateImportBatch, updateImportRow, updateImportRows } = await import("@/db/queries/imports");
 
     await createImportBatch({
@@ -116,8 +125,7 @@ export async function confirmImportBatch(input: ConfirmImportBatchInput): Promis
       })
     );
 
-    const recordInputs: SaveImportRecordInput[] = [];
-    const importedRowIds: string[] = [];
+    const pendingRecords: PendingImportRecord[] = [];
 
     for (const draft of importableDrafts) {
       const duplicate = await checkImportedRecordDuplicate(draft);
@@ -125,6 +133,7 @@ export async function confirmImportBatch(input: ConfirmImportBatchInput): Promis
 
       if (duplicate.level === "confirmed") {
         duplicateRows += 1;
+        duplicateRowsDuringConfirm += 1;
         if (rowId) {
           await updateImportRow(rowId, {
             status: "duplicate",
@@ -135,52 +144,57 @@ export async function confirmImportBatch(input: ConfirmImportBatchInput): Promis
         continue;
       }
 
-      recordInputs.push({
-        amountCents: draft.amountCents,
-        categoryId: draft.categoryId as string,
-        dedupeHash: draft.dedupeHash,
-        externalTradeNo: draft.externalTradeNo,
-        importBatchId: batchId,
-        importProvider: draft.provider,
-        merchantName: draft.merchantName,
-        note: draft.note,
-        recordDate: draft.recordDate,
-        type: draft.type
+      pendingRecords.push({
+        draft,
+        input: toSaveImportRecordInput(draft, batchId),
+        rowId
       });
-
-      if (rowId) {
-        importedRowIds.push(rowId);
-      }
     }
 
-    importedRows = await createImportedRecords(recordInputs);
+    await resolveRefundLinks(pendingRecords);
+    const importedRecordIds = new Set(await createImportedRecords(pendingRecords.map((item) => item.input)));
+    const importedRowIds = pendingRecords
+      .filter((item) => item.rowId && importedRecordIds.has(item.input.id as string))
+      .map((item) => item.rowId as string);
+    const lateDuplicateRowIds = pendingRecords
+      .filter((item) => item.rowId && !importedRecordIds.has(item.input.id as string))
+      .map((item) => item.rowId as string);
+
+    importedRows = importedRowIds.length;
+    duplicateRows += lateDuplicateRowIds.length;
+    duplicateRowsDuringConfirm += lateDuplicateRowIds.length;
+
     await updateImportRows(importedRowIds, { status: "imported" });
+    await updateImportRows(lateDuplicateRowIds, {
+      status: "duplicate",
+      errorMessage: "导入时命中重复记录，已跳过"
+    });
 
     await updateImportBatch(batchId, {
       duplicateRows,
       importedRows,
-      readyRows: Math.max(0, importableDrafts.length - importedRows)
+      readyRows: Math.max(0, importableDrafts.length - importedRows - duplicateRowsDuringConfirm)
     });
   } else {
+    const pendingRecords: PendingImportRecord[] = [];
+
     for (const draft of importableDrafts) {
       const duplicate = await checkImportedRecordDuplicate(draft);
       if (duplicate.level === "confirmed") {
         duplicateRows += 1;
+        duplicateRowsDuringConfirm += 1;
         continue;
       }
 
-      await createImportedRecord({
-        amountCents: draft.amountCents,
-        categoryId: draft.categoryId as string,
-        dedupeHash: draft.dedupeHash,
-        externalTradeNo: draft.externalTradeNo,
-        importBatchId: batchId,
-        importProvider: draft.provider,
-        merchantName: draft.merchantName,
-        note: draft.note,
-        recordDate: draft.recordDate,
-        type: draft.type
+      pendingRecords.push({
+        draft,
+        input: toSaveImportRecordInput(draft, batchId)
       });
+    }
+
+    await resolveRefundLinks(pendingRecords);
+    for (const pending of pendingRecords) {
+      await createImportedRecord(pending.input);
       importedRows += 1;
     }
   }
@@ -194,9 +208,46 @@ export async function confirmImportBatch(input: ConfirmImportBatchInput): Promis
     importedRows,
     provider: input.provider,
     providerDetail: input.providerDetail ?? null,
-    readyRows: Math.max(0, importableDrafts.length - importedRows),
+    readyRows: Math.max(0, importableDrafts.length - importedRows - duplicateRowsDuringConfirm),
     totalRows: normalizedDrafts.length
   };
+}
+
+interface PendingImportRecord {
+  draft: ImportRecordDraftDTO;
+  input: SaveImportRecordInput;
+  rowId?: string;
+}
+
+function toSaveImportRecordInput(draft: ImportRecordDraftDTO, batchId: string): SaveImportRecordInput {
+  return {
+    amountCents: draft.amountCents,
+    categoryId: draft.categoryId as string,
+    dedupeHash: draft.dedupeHash,
+    externalTradeNo: draft.externalTradeNo,
+    id: createLocalId("record"),
+    importBatchId: batchId,
+    importProvider: draft.provider,
+    merchantOrderNo: draft.merchantOrderNo,
+    merchantName: draft.merchantName,
+    note: draft.note,
+    recordDate: draft.recordDate,
+    transactionKind: draft.transactionKind,
+    type: draft.type
+  };
+}
+
+async function resolveRefundLinks(records: PendingImportRecord[]): Promise<void> {
+  const expenseRecords = records.filter((item) => item.draft.transactionKind === "expense");
+
+  for (const refund of records.filter((item) => item.draft.transactionKind === "refund")) {
+    const sameBatchSource = findRefundSourceCandidate(
+      refund.draft,
+      expenseRecords.map((item) => ({ ...item.draft, pendingRecord: item }))
+    )?.pendingRecord;
+    refund.input.relatedRecordId =
+      sameBatchSource?.input.id ?? (await findRefundSourceRecord(refund.draft))?.id;
+  }
 }
 
 export function assertImportFileMatchesProvider(provider: ImportProvider, fileType: ImportFileType): void {
@@ -245,13 +296,24 @@ function toImportRow(id: string, batchId: string, draft: ImportRecordDraftDTO) {
     recordDate: draft.recordDate,
     merchantName: draft.merchantName ?? null,
     externalTradeNo: draft.externalTradeNo ?? null,
+    merchantOrderNo: draft.merchantOrderNo ?? null,
     note: draft.note,
     categoryId: draft.categoryId ?? null,
     confidence: Math.round((draft.confidence ?? 0) * 100),
     duplicateRecordId: draft.duplicateRecordId ?? null,
     dedupeHash: draft.dedupeHash ?? createImportDedupeHash(draft),
+    transactionKind: draft.transactionKind,
     errorMessage: draft.status === "error" ? "字段缺失或金额/日期无法识别" : null,
     createdAt: getNowISOString(),
     updatedAt: getNowISOString()
   };
+}
+
+async function ensureNativeDatabaseReady(): Promise<void> {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  const { initializeDatabase } = await import("@/db/init");
+  await initializeDatabase();
 }

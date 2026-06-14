@@ -17,6 +17,7 @@ import { defaultTheme } from "@/constants/themes";
 import { getCategories } from "@/services/categoryService";
 import { checkImportedRecordDuplicate, createImportDedupeHash } from "@/services/duplicateRecordService";
 import { createImportClassifier } from "@/services/importClassifierService";
+import { classifyImportTransaction } from "@/services/importTransactionClassifierService";
 import {
   assertImportFileMatchesProvider,
   confirmImportBatch,
@@ -193,13 +194,14 @@ export default function ImportScreen() {
       }
 
       const autoImportItems = nextItems.filter(isAutoImportItem);
+      const silentSkippedItems = nextItems.filter(isSilentSkippedItem);
       let autoImportedRows = 0;
 
       setFile(selection);
-      if (autoImportItems.length > 0) {
+      if (autoImportItems.length > 0 || silentSkippedItems.length > 0) {
         updateImportProgress(92, `正在自动导入 ${autoImportItems.length} 笔`);
         const batch = await confirmImportBatch({
-          drafts: autoImportItems.map((item) => item.draft),
+          drafts: [...autoImportItems, ...silentSkippedItems].map((item) => item.draft),
           file: selection,
           provider,
           providerDetail: provider === "bank" ? bankPreset : null
@@ -252,7 +254,17 @@ export default function ImportScreen() {
       const batchItems = await Promise.all(
         batchDrafts.map(async (draft, offset) => {
           const index = start + offset;
-          const classification = await classifyImportedRecord(draft);
+          const classification =
+            draft.transactionKind === "refund"
+              ? {
+                  categoryId:
+                    incomeCategories.find((category) => category.name === "退款")?.id ??
+                    incomeCategories.find((category) => category.name.includes("其他"))?.id,
+                  confidence: 1
+                }
+              : draft.transactionKind === "transfer" || draft.transactionKind === "ignore"
+                ? { categoryId: undefined, confidence: 1 }
+                : await classifyImportedRecord(draft);
           const enrichedDraft = {
             ...draft,
             categoryId: classification.categoryId,
@@ -260,7 +272,18 @@ export default function ImportScreen() {
             dedupeHash: createImportDedupeHash(draft)
           };
           const duplicate = draft.status === "pending" ? await checkImportedRecordDuplicate(enrichedDraft) : { level: "none" as const };
-          const status: ImportRowStatus = draft.status !== "pending" ? draft.status : duplicate.level === "none" ? "ready" : "duplicate";
+          const status: ImportRowStatus =
+            draft.status !== "pending"
+              ? draft.status
+              : duplicate.level === "none"
+                ? "ready"
+                : duplicate.level === "confirmed"
+                  ? "skipped"
+                  : "duplicate";
+          const raw =
+            duplicate.level === "confirmed"
+              ? { ...enrichedDraft.raw, _importSkipReason: "confirmed_duplicate" }
+              : enrichedDraft.raw;
 
           return {
             duplicateReason: "reason" in duplicate ? duplicate.reason : undefined,
@@ -268,6 +291,7 @@ export default function ImportScreen() {
             draft: {
               ...enrichedDraft,
               duplicateRecordId: "duplicateRecordId" in duplicate ? duplicate.duplicateRecordId : undefined,
+              raw,
               status
             }
           };
@@ -332,6 +356,7 @@ export default function ImportScreen() {
                 categoryId: fallbackCategoryId,
                 confidence: 0.28,
                 status: item.draft.status === "duplicate" || item.draft.status === "skipped" ? item.draft.status : "ready",
+                transactionKind: type,
                 type
               }
             }
@@ -561,10 +586,19 @@ function normalizeRow(
   const directionText = pickField(row, ["收/支", "收支", "direction"]) ?? "";
   const typeText = pickField(row, ["交易类型", "交易分类", "交易摘要", "类型"]) ?? "";
   const statusText = pickField(row, ["当前状态", "交易状态", "状态", "status"]) ?? "";
+  const productText = pickField(row, ["商品", "商品说明", "商品名称", "备注"]) ?? "";
   const rowText = stringifyRow(row);
-  const internalTransfer = isInternalTransferRow(provider, typeText, rowText);
-  const neutral = internalTransfer || shouldSkipImportedRow(provider, directionText, typeText, statusText, rowText);
-  const type = inferType(provider, directionText, typeText, rowText, signedAmount);
+  const transaction = classifyImportTransaction({
+    directionText,
+    productText,
+    provider,
+    rowText,
+    signedAmount,
+    statusText,
+    typeText
+  });
+  const type = transaction.ledgerType;
+  const silent = transaction.kind === "transfer" || transaction.kind === "ignore";
   const amountCents = Math.abs(Math.round(signedAmount * 100));
   const recordDate = resolveRecordDate(row, provider);
 
@@ -576,6 +610,7 @@ function normalizeRow(
       raw: row,
       recordDate: recordDate || getTodayDateString(),
       status: "error",
+      transactionKind: transaction.kind,
       type
     };
   }
@@ -586,14 +621,16 @@ function normalizeRow(
   return {
     amountCents,
     classificationTexts: resolveClassificationTexts(row, provider, bankPreset),
-    externalTradeNo: cleanValue(pickField(row, ["交易单号", "交易号", "交易订单号", "商户单号", "订单号", "日志号", "trade_no", "order_no"])),
+    externalTradeNo: cleanValue(pickField(row, ["交易单号", "交易号", "交易订单号", "订单号", "日志号", "trade_no"])),
     importTemplate: provider === "bank" ? bankPreset : provider,
+    merchantOrderNo: cleanValue(pickField(row, ["商户单号", "商家订单号", "商户订单号", "merchant_order_no", "order_no"])),
     merchantName,
     note,
     provider,
-    raw: internalTransfer ? { ...row, _importSkipReason: "transfer" } : row,
+    raw: silent ? { ...row, _importSkipReason: transaction.kind, _importKindReason: transaction.reason } : row,
     recordDate,
-    status: neutral ? "skipped" : "pending",
+    status: silent ? "skipped" : "pending",
+    transactionKind: transaction.kind,
     type
   };
 }
@@ -615,153 +652,6 @@ function parseSignedAmount(value: string): number {
   const normalized = value.replace(/[¥,\s]/g, "").replace("元", "");
   const match = /[-+]?\d+(\.\d+)?/.exec(normalized);
   return match ? Number(match[0]) : 0;
-}
-
-function inferType(
-  provider: ImportProvider,
-  directionText: string,
-  typeText: string,
-  rowText: string,
-  signedAmount: number
-): RecordType {
-  const direction = normalizeComparableText(directionText);
-  const detail = normalizeComparableText(typeText);
-  const fullText = normalizeComparableText(`${typeText} ${rowText}`);
-
-  if ((provider === "alipay" || provider === "wechat") && isRefundLikeText(fullText)) {
-    return "income";
-  }
-
-  if (direction.includes("支出")) {
-    return "expense";
-  }
-  if (direction.includes("收入")) {
-    return "income";
-  }
-
-  if (provider === "wechat") {
-    if (detail.includes("零钱通转入") || detail.includes("转入") || detail.includes("收款") || detail.includes("到账")) {
-      return "income";
-    }
-    if (detail.includes("零钱通转出") || detail.includes("转出") || detail.includes("消费") || detail.includes("付款") || detail.includes("支付")) {
-      return "expense";
-    }
-  }
-
-  if (provider === "alipay") {
-    if (fullText.includes("花呗") || fullText.includes("信用借还") || fullText.includes("主动还款") || fullText.includes("还款")) {
-      return "expense";
-    }
-    if (isYuebaoTransferOut(fullText)) {
-      return "expense";
-    }
-    if (isYuebaoTransferIn(fullText)) {
-      return "income";
-    }
-    if (fullText.includes("退款") || fullText.includes("退货") || fullText.includes("退费") || detail.includes("收款") || detail.includes("转入")) {
-      return "income";
-    }
-    if (
-      detail.includes("消费") ||
-      detail.includes("付款") ||
-      detail.includes("支付") ||
-      detail.includes("缴费") ||
-      fullText.includes("日用百货") ||
-      fullText.includes("购物") ||
-      fullText.includes("餐饮") ||
-      fullText.includes("交通")
-    ) {
-      return "expense";
-    }
-  }
-
-  return signedAmount < 0 ? "expense" : "income";
-}
-
-function isRefundLikeText(text: string): boolean {
-  return containsAny(text, ["退款", "退货", "退费", "返还", "退回", "冲正", "售后", "退款成功", "原交易退回"]);
-}
-
-function shouldSkipImportedRow(
-  provider: ImportProvider,
-  directionText: string,
-  typeText: string,
-  statusText: string,
-  rowText: string
-): boolean {
-  const direction = normalizeComparableText(directionText);
-  const detail = normalizeComparableText(typeText);
-  const status = normalizeComparableText(statusText);
-  const fullText = normalizeComparableText(`${typeText} ${rowText}`);
-
-  if (status.includes("关闭")) {
-    return true;
-  }
-  if (direction.includes("不计收支")) {
-    if (provider === "alipay") {
-      return !(
-        fullText.includes("花呗") ||
-        fullText.includes("信用借还") ||
-        fullText.includes("主动还款") ||
-        fullText.includes("还款") ||
-        fullText.includes("退款") ||
-        fullText.includes("退货") ||
-        fullText.includes("退费") ||
-        fullText.includes("返还") ||
-        fullText.includes("余额宝") ||
-        fullText.includes("消费") ||
-        fullText.includes("日用百货") ||
-        fullText.includes("餐饮") ||
-        fullText.includes("交通") ||
-        fullText.includes("购物")
-      );
-    }
-
-    return true;
-  }
-  if (provider === "wechat" && direction === "/") {
-    return !(detail.includes("零钱通转入") || detail.includes("零钱通转出") || detail.includes("转入") || detail.includes("转出"));
-  }
-
-  return false;
-}
-
-function isInternalTransferRow(provider: ImportProvider, typeText: string, rowText: string): boolean {
-  const fullText = normalizeComparableText(`${typeText} ${rowText}`);
-
-  if (provider === "alipay") {
-    return containsAny(fullText, [
-      "余额转入余额宝",
-      "支付宝余额转入余额宝",
-      "余额宝转出到余额",
-      "余额宝转出至余额",
-      "余额宝转入支付宝余额",
-      "余额宝本金转出到余额",
-      "余额宝本金转入支付宝余额"
-    ]);
-  }
-
-  if (provider === "wechat") {
-    return containsAny(fullText, [
-      "零钱转入零钱通",
-      "微信零钱转入零钱通",
-      "零钱通转出到零钱",
-      "零钱通转出至零钱",
-      "零钱通转入微信零钱",
-      "零钱通本金转出到零钱",
-      "零钱通本金转入微信零钱"
-    ]);
-  }
-
-  return false;
-}
-
-function isYuebaoTransferIn(text: string): boolean {
-  return text.includes("转入余额宝") || text.includes("余额宝转入") || (text.includes("余额宝") && text.includes("本金转入"));
-}
-
-function isYuebaoTransferOut(text: string): boolean {
-  return text.includes("余额宝转出") || (text.includes("余额宝") && text.includes("本金转出"));
 }
 
 function resolveMerchantName(
@@ -975,7 +865,10 @@ function isAutoImportItem(item: ImportPreviewItem): boolean {
 }
 
 function isSilentSkippedItem(item: ImportPreviewItem): boolean {
-  return item.draft.status === "skipped" && item.draft.raw._importSkipReason === "transfer";
+  return (
+    item.draft.status === "skipped" &&
+    ["transfer", "ignore", "confirmed_duplicate"].includes(String(item.draft.raw._importSkipReason ?? ""))
+  );
 }
 
 function withImportTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { categories, records, type NewRecordRow, type RecordRow } from "@/db/schema";
 import type { RecordDTO } from "@/types/models";
@@ -13,6 +13,19 @@ export async function createRecords(inputs: NewRecordRow[]): Promise<void> {
   }
 
   await db.insert(records).values(inputs).onConflictDoNothing();
+}
+
+export async function listExistingRecordIds(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const rows = await db
+    .select({ id: records.id })
+    .from(records)
+    .where(inArray(records.id, ids));
+
+  return rows.map((row) => row.id);
 }
 
 export async function upsertSubscriptionRecord(input: NewRecordRow): Promise<void> {
@@ -104,8 +117,11 @@ export async function listRecordDTOsByMonth(month: string): Promise<RecordDTO[]>
         importBatchId: records.importBatchId,
         importProvider: records.importProvider,
         externalTradeNo: records.externalTradeNo,
+        merchantOrderNo: records.merchantOrderNo,
         merchantName: records.merchantName,
         dedupeHash: records.dedupeHash,
+        transactionKind: records.transactionKind,
+        relatedRecordId: records.relatedRecordId,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -134,8 +150,11 @@ export async function listRecordDTOsByDate(date: string): Promise<RecordDTO[]> {
         importBatchId: records.importBatchId,
         importProvider: records.importProvider,
         externalTradeNo: records.externalTradeNo,
+        merchantOrderNo: records.merchantOrderNo,
         merchantName: records.merchantName,
         dedupeHash: records.dedupeHash,
+        transactionKind: records.transactionKind,
+        relatedRecordId: records.relatedRecordId,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -164,8 +183,11 @@ export async function findRecordDTOById(id: string): Promise<RecordDTO | undefin
         importBatchId: records.importBatchId,
         importProvider: records.importProvider,
         externalTradeNo: records.externalTradeNo,
+        merchantOrderNo: records.merchantOrderNo,
         merchantName: records.merchantName,
         dedupeHash: records.dedupeHash,
+        transactionKind: records.transactionKind,
+        relatedRecordId: records.relatedRecordId,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -196,7 +218,8 @@ export async function findSubscriptionRecord(subscriptionId: string, month: stri
 
 export async function findImportRecordByTradeNo(
   provider: NonNullable<RecordRow["importProvider"]>,
-  externalTradeNo: string
+  externalTradeNo: string,
+  transactionKind: NonNullable<RecordRow["transactionKind"]>
 ): Promise<RecordRow | undefined> {
   const [record] = await db
     .select()
@@ -205,7 +228,8 @@ export async function findImportRecordByTradeNo(
       and(
         eq(records.source, "import"),
         eq(records.importProvider, provider),
-        eq(records.externalTradeNo, externalTradeNo)
+        eq(records.externalTradeNo, externalTradeNo),
+        eq(records.transactionKind, transactionKind)
       )
     )
     .limit(1);
@@ -248,8 +272,11 @@ export async function findPossibleDuplicateRecords(input: {
         importBatchId: records.importBatchId,
         importProvider: records.importProvider,
         externalTradeNo: records.externalTradeNo,
+        merchantOrderNo: records.merchantOrderNo,
         merchantName: records.merchantName,
         dedupeHash: records.dedupeHash,
+        transactionKind: records.transactionKind,
+        relatedRecordId: records.relatedRecordId,
         createdAt: records.createdAt,
         updatedAt: records.updatedAt
       })
@@ -281,14 +308,18 @@ function mapRecordRows(
     importBatchId: string | null;
     importProvider: RecordDTO["importProvider"];
     externalTradeNo: string | null;
+    merchantOrderNo: string | null;
     merchantName: string | null;
     dedupeHash: string | null;
+    transactionKind: RecordDTO["transactionKind"] | null;
+    relatedRecordId: string | null;
     createdAt: string;
     updatedAt: string;
   }>
 ): RecordDTO[] {
   return rows.map((record) => ({
     ...record,
-    note: record.note ?? ""
+    note: record.note ?? "",
+    transactionKind: record.transactionKind ?? record.type
   }));
 }

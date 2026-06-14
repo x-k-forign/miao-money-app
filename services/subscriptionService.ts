@@ -54,6 +54,7 @@ export async function addSubscription(input: SaveSubscriptionInput): Promise<str
     return id;
   }
 
+  await ensureNativeDatabaseReady();
   const { createSubscription } = await import("@/db/queries/subscriptions");
   await createSubscription({
     id,
@@ -87,6 +88,7 @@ export async function updateSubscriptionById(id: string, input: SaveSubscription
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { updateSubscription } = await import("@/db/queries/subscriptions");
   await updateSubscription(id, input);
   await syncSubscriptionForCurrentMonth(id);
@@ -106,6 +108,7 @@ export async function deleteSubscriptionById(id: string): Promise<void> {
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { deleteSubscription } = await import("@/db/queries/subscriptions");
   await deleteSubscription(id);
 }
@@ -122,6 +125,7 @@ export async function toggleSubscriptionEnabled(id: string, enabled: boolean): P
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { updateSubscription } = await import("@/db/queries/subscriptions");
   await updateSubscription(id, { enabled });
   await syncSubscriptionForCurrentMonth(id);
@@ -133,6 +137,7 @@ export async function getSubscriptions(): Promise<SubscriptionDTO[]> {
     return sortSubscriptions(webSubscriptions);
   }
 
+  await ensureNativeDatabaseReady();
   const { listSubscriptionDTOs } = await import("@/db/queries/subscriptions");
   return listSubscriptionDTOs();
 }
@@ -142,6 +147,7 @@ export async function getSubscriptionById(id: string): Promise<SubscriptionDTO |
     return webSubscriptions.find((subscription) => subscription.id === id);
   }
 
+  await ensureNativeDatabaseReady();
   const { findSubscriptionDTOById } = await import("@/db/queries/subscriptions");
   return findSubscriptionDTOById(id);
 }
@@ -213,6 +219,7 @@ async function markGenerated(id: string, month: string | null): Promise<void> {
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { updateSubscription } = await import("@/db/queries/subscriptions");
   await updateSubscription(id, { lastGeneratedMonth: month });
 }
@@ -279,4 +286,13 @@ function sortSubscriptions(subscriptions: SubscriptionDTO[]): SubscriptionDTO[] 
 
     return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
   });
+}
+
+async function ensureNativeDatabaseReady(): Promise<void> {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  const { initializeDatabase } = await import("@/db/init");
+  await initializeDatabase();
 }

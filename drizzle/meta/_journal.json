@@ -22,6 +22,13 @@
       "when": 1780840499655,
       "tag": "0002_closed_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781346328472,
+      "tag": "0003_skinny_menace",
+      "breakpoints": true
     }
   ]
 }

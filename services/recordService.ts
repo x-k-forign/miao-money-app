@@ -1,9 +1,17 @@
 import { Platform } from "react-native";
 import { mockRecords } from "@/constants/mockData";
 import type { NewRecordRow } from "@/db/schema";
-import type { ImportProvider, RecordDTO, RecordSource, RecordType } from "@/types/models";
+import type {
+  ImportProvider,
+  ImportRecordDraftDTO,
+  ImportTransactionKind,
+  RecordDTO,
+  RecordSource,
+  RecordType
+} from "@/types/models";
 import { getNowISOString, getRecordMonth } from "@/utils/date";
 import { createLocalId } from "@/utils/id";
+import { findRefundSourceCandidate } from "@/services/refundMatchingService";
 
 export interface SaveRecordInput {
   type: RecordType;
@@ -16,9 +24,13 @@ export interface SaveRecordInput {
 export interface SaveImportRecordInput extends SaveRecordInput {
   dedupeHash?: string;
   externalTradeNo?: string;
+  id?: string;
   importBatchId: string;
   importProvider: ImportProvider;
+  merchantOrderNo?: string;
   merchantName?: string;
+  relatedRecordId?: string;
+  transactionKind: ImportTransactionKind;
 }
 
 const webRecords: RecordDTO[] = mockRecords.map((record) => ({
@@ -42,39 +54,44 @@ export async function createImportedRecord(input: SaveImportRecordInput): Promis
   return createRecordWithSource(input, "import", undefined, input);
 }
 
-export async function createImportedRecords(inputs: SaveImportRecordInput[]): Promise<number> {
+export async function createImportedRecords(inputs: SaveImportRecordInput[]): Promise<string[]> {
   if (inputs.length === 0) {
-    return 0;
+    return [];
   }
 
   if (Platform.OS === "web") {
     for (const input of inputs) {
       await createImportedRecord(input);
     }
-    return inputs.length;
+    return inputs.map((input) => input.id ?? "");
   }
 
-  const { createRecords } = await import("@/db/queries/records");
+  await ensureNativeDatabaseReady();
+  const { createRecords, listExistingRecordIds } = await import("@/db/queries/records");
+  const recordRows = inputs.map((input) => ({
+    id: input.id ?? createLocalId("record"),
+    type: input.type,
+    amountCents: input.amountCents,
+    categoryId: input.categoryId,
+    note: input.note,
+    recordDate: input.recordDate,
+    recordMonth: getRecordMonth(input.recordDate),
+    source: "import" as const,
+    subscriptionId: null,
+    importBatchId: input.importBatchId,
+    importProvider: input.importProvider,
+    externalTradeNo: input.externalTradeNo ?? null,
+    merchantOrderNo: input.merchantOrderNo ?? null,
+    merchantName: input.merchantName ?? null,
+    dedupeHash: input.dedupeHash ?? null,
+    transactionKind: input.transactionKind,
+    relatedRecordId: input.relatedRecordId ?? null
+  }));
   await createRecords(
-    inputs.map((input) => ({
-      id: createLocalId("record"),
-      type: input.type,
-      amountCents: input.amountCents,
-      categoryId: input.categoryId,
-      note: input.note,
-      recordDate: input.recordDate,
-      recordMonth: getRecordMonth(input.recordDate),
-      source: "import",
-      subscriptionId: null,
-      importBatchId: input.importBatchId,
-      importProvider: input.importProvider,
-      externalTradeNo: input.externalTradeNo ?? null,
-      merchantName: input.merchantName ?? null,
-      dedupeHash: input.dedupeHash ?? null
-    }))
+    recordRows
   );
 
-  return inputs.length;
+  return listExistingRecordIds(recordRows.map((row) => row.id));
 }
 
 export async function upsertSubscriptionRecordForMonth(
@@ -107,6 +124,7 @@ export async function upsertSubscriptionRecordForMonth(
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { upsertSubscriptionRecord } = await import("@/db/queries/records");
   await upsertSubscriptionRecord({
     id: createLocalId("record"),
@@ -138,6 +156,7 @@ export async function deleteSubscriptionGeneratedRecordForMonth(
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { deleteSubscriptionRecordForMonth } = await import("@/db/queries/records");
   await deleteSubscriptionRecordForMonth(subscriptionId, month);
 }
@@ -153,6 +172,7 @@ export async function detachSubscriptionGeneratedRecords(subscriptionId: string)
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { detachSubscriptionRecords } = await import("@/db/queries/records");
   await detachSubscriptionRecords(subscriptionId);
 }
@@ -174,6 +194,7 @@ export async function updateManualRecord(id: string, input: SaveRecordInput): Pr
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { updateRecord } = await import("@/db/queries/records");
   await updateRecord(id, toRecordRow(input));
 }
@@ -187,6 +208,7 @@ export async function deleteRecordById(id: string): Promise<void> {
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { deleteRecord } = await import("@/db/queries/records");
   await deleteRecord(id);
 }
@@ -197,6 +219,7 @@ export async function deleteAllRecordRows(): Promise<void> {
     return;
   }
 
+  await ensureNativeDatabaseReady();
   const { deleteAllRecords } = await import("@/db/queries/records");
   await deleteAllRecords();
 }
@@ -206,6 +229,7 @@ export async function getMonthlyRecords(month: string): Promise<RecordDTO[]> {
     return sortRecords(webRecords.filter((record) => record.recordDate.startsWith(month)));
   }
 
+  await ensureNativeDatabaseReady();
   const { listRecordDTOsByMonth } = await import("@/db/queries/records");
   return listRecordDTOsByMonth(month);
 }
@@ -215,6 +239,7 @@ export async function getRecordsByDate(date: string): Promise<RecordDTO[]> {
     return sortRecords(webRecords.filter((record) => record.recordDate === date));
   }
 
+  await ensureNativeDatabaseReady();
   const { listRecordDTOsByDate } = await import("@/db/queries/records");
   return listRecordDTOsByDate(date);
 }
@@ -224,6 +249,7 @@ export async function getRecordById(id: string): Promise<RecordDTO | undefined> 
     return webRecords.find((record) => record.id === id);
   }
 
+  await ensureNativeDatabaseReady();
   const { findRecordDTOById } = await import("@/db/queries/records");
   return findRecordDTOById(id);
 }
@@ -234,13 +260,25 @@ export async function getRecordsForMonths(months: string[]): Promise<RecordDTO[]
   return sortRecords(batches.flat());
 }
 
+export async function findRefundSourceRecord(draft: ImportRecordDraftDTO): Promise<RecordDTO | undefined> {
+  const months = getPreviousMonths(draft.recordDate, 7);
+  const records = (await getRecordsForMonths(months)).filter(
+    (record) =>
+      record.type === "expense" &&
+      (record.transactionKind ?? record.type) === "expense" &&
+      record.importProvider === draft.provider
+  );
+
+  return findRefundSourceCandidate(draft, records);
+}
+
 async function createRecordWithSource(
   input: SaveRecordInput,
   source: RecordSource,
   subscriptionId?: string,
   importInput?: SaveImportRecordInput
 ): Promise<string> {
-  const id = createLocalId("record");
+  const id = importInput?.id ?? createLocalId("record");
 
   if (Platform.OS === "web") {
     const category = await findWebCategory(input.categoryId);
@@ -255,14 +293,18 @@ async function createRecordWithSource(
       importBatchId: importInput?.importBatchId ?? null,
       importProvider: importInput?.importProvider ?? null,
       externalTradeNo: importInput?.externalTradeNo ?? null,
+      merchantOrderNo: importInput?.merchantOrderNo ?? null,
       merchantName: importInput?.merchantName ?? null,
       dedupeHash: importInput?.dedupeHash ?? null,
+      transactionKind: importInput?.transactionKind ?? input.type,
+      relatedRecordId: importInput?.relatedRecordId ?? null,
       createdAt: getNowISOString(),
       updatedAt: getNowISOString()
     });
     return id;
   }
 
+  await ensureNativeDatabaseReady();
   const { createRecord } = await import("@/db/queries/records");
   await createRecord({
     id,
@@ -277,8 +319,11 @@ async function createRecordWithSource(
     importBatchId: importInput?.importBatchId ?? null,
     importProvider: importInput?.importProvider ?? null,
     externalTradeNo: importInput?.externalTradeNo ?? null,
+    merchantOrderNo: importInput?.merchantOrderNo ?? null,
     merchantName: importInput?.merchantName ?? null,
-    dedupeHash: importInput?.dedupeHash ?? null
+    dedupeHash: importInput?.dedupeHash ?? null,
+    transactionKind: importInput?.transactionKind ?? input.type,
+    relatedRecordId: importInput?.relatedRecordId ?? null
   });
 
   return id;
@@ -309,4 +354,21 @@ function sortRecords(records: RecordDTO[]): RecordDTO[] {
 
     return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
   });
+}
+
+function getPreviousMonths(recordDate: string, count: number): string[] {
+  const [year, month] = recordDate.slice(0, 7).split("-").map(Number);
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(year, month - 1 - index, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
+async function ensureNativeDatabaseReady(): Promise<void> {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  const { initializeDatabase } = await import("@/db/init");
+  await initializeDatabase();
 }

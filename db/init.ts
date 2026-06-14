@@ -1,12 +1,27 @@
 import { sqlite } from "@/db/client";
 
 let initialized = false;
+let initializationPromise: Promise<void> | null = null;
 
 export async function initializeDatabase(): Promise<void> {
   if (initialized) {
     return;
   }
 
+  if (!initializationPromise) {
+    initializationPromise = runDatabaseInitialization()
+      .then(() => {
+        initialized = true;
+      })
+      .finally(() => {
+        initializationPromise = null;
+      });
+  }
+
+  return initializationPromise;
+}
+
+async function runDatabaseInitialization(): Promise<void> {
   await sqlite.execAsync(`
     PRAGMA foreign_keys = ON;
 
@@ -75,8 +90,11 @@ export async function initializeDatabase(): Promise<void> {
       import_batch_id TEXT,
       import_provider TEXT,
       external_trade_no TEXT,
+      merchant_order_no TEXT,
       merchant_name TEXT,
       dedupe_hash TEXT,
+      transaction_kind TEXT,
+      related_record_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT records_type_check CHECK (type IN ('income', 'expense')),
@@ -91,6 +109,9 @@ export async function initializeDatabase(): Promise<void> {
       ),
       CONSTRAINT records_import_source_check CHECK (
         source <> 'import' OR import_provider IN ('wechat', 'alipay', 'bank')
+      ),
+      CONSTRAINT records_transaction_kind_check CHECK (
+        transaction_kind IS NULL OR transaction_kind IN ('expense', 'income', 'transfer', 'refund', 'ignore')
       )
     );
 
@@ -140,16 +161,21 @@ export async function initializeDatabase(): Promise<void> {
       record_date TEXT NOT NULL,
       merchant_name TEXT,
       external_trade_no TEXT,
+      merchant_order_no TEXT,
       note TEXT,
       category_id TEXT REFERENCES categories(id),
       confidence INTEGER NOT NULL DEFAULT 0,
       duplicate_record_id TEXT REFERENCES records(id) ON DELETE SET NULL,
       dedupe_hash TEXT,
+      transaction_kind TEXT NOT NULL,
       error_message TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT import_rows_status_check CHECK (status IN ('pending', 'ready', 'error', 'duplicate', 'skipped', 'imported')),
       CONSTRAINT import_rows_type_check CHECK (type IN ('income', 'expense')),
+      CONSTRAINT import_rows_transaction_kind_check CHECK (
+        transaction_kind IN ('expense', 'income', 'transfer', 'refund', 'ignore')
+      ),
       CONSTRAINT import_rows_amount_nonnegative_check CHECK (amount_cents >= 0),
       CONSTRAINT import_rows_confidence_check CHECK (confidence BETWEEN 0 AND 100)
     );
@@ -261,8 +287,7 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   await migrateRecordsForImportSupport();
-
-  initialized = true;
+  await verifyDatabaseSchema();
 }
 
 async function migrateRecordsForImportSupport(): Promise<void> {
@@ -289,9 +314,24 @@ async function migrateRecordsForImportSupport(): Promise<void> {
     await sqlite.execAsync("ALTER TABLE records ADD COLUMN merchant_name TEXT;");
   }
 
+  if (!columnNames.has("merchant_order_no")) {
+    await sqlite.execAsync("ALTER TABLE records ADD COLUMN merchant_order_no TEXT;");
+  }
+
   if (!columnNames.has("dedupe_hash")) {
     await sqlite.execAsync("ALTER TABLE records ADD COLUMN dedupe_hash TEXT;");
   }
+
+  if (!columnNames.has("transaction_kind")) {
+    await sqlite.execAsync("ALTER TABLE records ADD COLUMN transaction_kind TEXT;");
+  }
+  await sqlite.execAsync("UPDATE records SET transaction_kind = type WHERE transaction_kind IS NULL;");
+
+  if (!columnNames.has("related_record_id")) {
+    await sqlite.execAsync("ALTER TABLE records ADD COLUMN related_record_id TEXT;");
+  }
+
+  await migrateImportRowsForTransactionKinds();
 
   if (tableSql.includes("'import'") || !tableSql.includes("records_source_check")) {
     await ensureRecordImportIndexes();
@@ -330,8 +370,11 @@ async function migrateRecordsForImportSupport(): Promise<void> {
       import_batch_id TEXT,
       import_provider TEXT,
       external_trade_no TEXT,
+      merchant_order_no TEXT,
       merchant_name TEXT,
       dedupe_hash TEXT,
+      transaction_kind TEXT,
+      related_record_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT records_type_check CHECK (type IN ('income', 'expense')),
@@ -346,6 +389,9 @@ async function migrateRecordsForImportSupport(): Promise<void> {
       ),
       CONSTRAINT records_import_source_check CHECK (
         source <> 'import' OR import_provider IN ('wechat', 'alipay', 'bank')
+      ),
+      CONSTRAINT records_transaction_kind_check CHECK (
+        transaction_kind IS NULL OR transaction_kind IN ('expense', 'income', 'transfer', 'refund', 'ignore')
       )
     );
 
@@ -362,8 +408,11 @@ async function migrateRecordsForImportSupport(): Promise<void> {
       import_batch_id,
       import_provider,
       external_trade_no,
+      merchant_order_no,
       merchant_name,
       dedupe_hash,
+      transaction_kind,
+      related_record_id,
       created_at,
       updated_at
     )
@@ -380,8 +429,11 @@ async function migrateRecordsForImportSupport(): Promise<void> {
       import_batch_id,
       import_provider,
       external_trade_no,
+      merchant_order_no,
       merchant_name,
       dedupe_hash,
+      COALESCE(transaction_kind, type),
+      related_record_id,
       created_at,
       updated_at
     FROM ${backupTableName};
@@ -413,19 +465,100 @@ async function ensureRecordImportIndexes(): Promise<void> {
     CREATE INDEX IF NOT EXISTS records_import_provider_trade_idx
       ON records(import_provider, external_trade_no);
 
+    CREATE INDEX IF NOT EXISTS records_import_provider_merchant_order_idx
+      ON records(import_provider, merchant_order_no);
+
     CREATE INDEX IF NOT EXISTS records_dedupe_hash_idx
       ON records(dedupe_hash);
+
+    CREATE INDEX IF NOT EXISTS records_related_record_idx
+      ON records(related_record_id);
 
     CREATE UNIQUE INDEX IF NOT EXISTS records_subscription_month_unique_idx
       ON records(subscription_id, record_month, source)
       WHERE source = 'subscription' AND subscription_id IS NOT NULL;
 
-    CREATE UNIQUE INDEX IF NOT EXISTS records_import_trade_unique_idx
-      ON records(import_provider, external_trade_no)
-      WHERE source = 'import' AND import_provider IS NOT NULL AND external_trade_no IS NOT NULL;
-
-    CREATE UNIQUE INDEX IF NOT EXISTS records_dedupe_hash_unique_idx
-      ON records(dedupe_hash)
-      WHERE source = 'import' AND dedupe_hash IS NOT NULL;
+    DROP INDEX IF EXISTS records_import_trade_unique_idx;
   `);
+
+  const duplicateTrade = await sqlite.getFirstAsync<{ present: number }>(`
+    SELECT 1 AS present
+    FROM records
+    WHERE source = 'import'
+      AND import_provider IS NOT NULL
+      AND external_trade_no IS NOT NULL
+    GROUP BY import_provider, external_trade_no, transaction_kind
+    HAVING COUNT(*) > 1
+    LIMIT 1;
+  `);
+  if (duplicateTrade) {
+    await sqlite.execAsync(`
+      CREATE INDEX IF NOT EXISTS records_import_trade_lookup_idx
+        ON records(import_provider, external_trade_no, transaction_kind);
+    `);
+  } else {
+    await sqlite.execAsync(`
+      DROP INDEX IF EXISTS records_import_trade_lookup_idx;
+      CREATE UNIQUE INDEX IF NOT EXISTS records_import_trade_unique_idx
+        ON records(import_provider, external_trade_no, transaction_kind)
+        WHERE source = 'import' AND import_provider IS NOT NULL AND external_trade_no IS NOT NULL;
+    `);
+  }
+
+  const duplicateHash = await sqlite.getFirstAsync<{ present: number }>(`
+    SELECT 1 AS present
+    FROM records
+    WHERE source = 'import' AND dedupe_hash IS NOT NULL
+    GROUP BY dedupe_hash
+    HAVING COUNT(*) > 1
+    LIMIT 1;
+  `);
+  if (duplicateHash) {
+    await sqlite.execAsync(`
+      DROP INDEX IF EXISTS records_dedupe_hash_unique_idx;
+      CREATE INDEX IF NOT EXISTS records_dedupe_hash_lookup_idx
+        ON records(dedupe_hash);
+    `);
+  } else {
+    await sqlite.execAsync(`
+      DROP INDEX IF EXISTS records_dedupe_hash_lookup_idx;
+      CREATE UNIQUE INDEX IF NOT EXISTS records_dedupe_hash_unique_idx
+        ON records(dedupe_hash)
+        WHERE source = 'import' AND dedupe_hash IS NOT NULL;
+    `);
+  }
+}
+
+async function migrateImportRowsForTransactionKinds(): Promise<void> {
+  const columns = await sqlite.getAllAsync<{ name: string }>("PRAGMA table_info(import_rows)");
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has("merchant_order_no")) {
+    await sqlite.execAsync("ALTER TABLE import_rows ADD COLUMN merchant_order_no TEXT;");
+  }
+
+  if (!columnNames.has("transaction_kind")) {
+    await sqlite.execAsync("ALTER TABLE import_rows ADD COLUMN transaction_kind TEXT;");
+  }
+  await sqlite.execAsync("UPDATE import_rows SET transaction_kind = type WHERE transaction_kind IS NULL;");
+
+  await sqlite.execAsync(`
+    CREATE INDEX IF NOT EXISTS import_rows_merchant_order_idx
+      ON import_rows(merchant_order_no);
+  `);
+}
+
+async function verifyDatabaseSchema(): Promise<void> {
+  await assertColumnsExist("records", ["merchant_order_no", "transaction_kind", "related_record_id"]);
+  await assertColumnsExist("import_rows", ["merchant_order_no", "transaction_kind"]);
+}
+
+async function assertColumnsExist(table: string, requiredColumns: string[]): Promise<void> {
+  const columns = await sqlite.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  const columnNames = new Set(columns.map((column) => column.name));
+  const missingColumns = requiredColumns.filter((column) => !columnNames.has(column));
+
+  if (missingColumns.length > 0) {
+    throw new Error(`Database migration incomplete: ${table}.${missingColumns.join(",")}`);
+  }
 }

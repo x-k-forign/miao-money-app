@@ -3,6 +3,7 @@ node_modules/
 .npm-cache/
 .pnpm-store/
 .expo/
+.expo-android-export-check/
 .expo-*.err
 .expo-*.log
 .expo-start.*

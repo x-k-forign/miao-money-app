@@ -1,6 +1,6 @@
 import { Stack, router } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Alert, Platform, StyleSheet, View } from "react-native";
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { defaultTheme } from "@/constants/themes";
 import { MiaoLoader } from "@/components/common/MiaoLoader";
@@ -8,7 +8,7 @@ import { useAppBootstrap } from "@/hooks/useAppBootstrap";
 import { ensureNotificationPermission, getNotificationPermissionState } from "@/services/notificationService";
 
 export default function RootLayout() {
-  const ready = useAppBootstrap();
+  const { error, ready, retry } = useAppBootstrap();
   const promptedForPermissions = useRef(false);
 
   useEffect(() => {
@@ -52,6 +52,21 @@ export default function RootLayout() {
     };
   }, [ready]);
 
+  if (error) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.errorTitle}>本地账本升级失败</Text>
+        <Text style={styles.errorMessage}>已有账单不会被删除。请重新尝试完成数据库升级。</Text>
+        <Text selectable style={styles.errorDetail}>
+          {error}
+        </Text>
+        <Pressable accessibilityRole="button" onPress={retry} style={styles.retryButton}>
+          <Text style={styles.retryText}>重新尝试</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (!ready) {
     return (
       <View style={styles.loading}>
@@ -89,6 +104,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: defaultTheme.background,
     flex: 1,
+    gap: 12,
     justifyContent: "center"
+  },
+  errorTitle: {
+    color: defaultTheme.text,
+    fontSize: 22,
+    fontWeight: "900"
+  },
+  errorMessage: {
+    color: defaultTheme.muted,
+    fontSize: 14,
+    lineHeight: 22,
+    maxWidth: 320,
+    textAlign: "center"
+  },
+  errorDetail: {
+    color: defaultTheme.muted,
+    fontSize: 11,
+    maxWidth: 320,
+    textAlign: "center"
+  },
+  retryButton: {
+    alignItems: "center",
+    backgroundColor: defaultTheme.primary,
+    borderRadius: 8,
+    minWidth: 160,
+    paddingHorizontal: 24,
+    paddingVertical: 13
+  },
+  retryText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900"
   }
 });

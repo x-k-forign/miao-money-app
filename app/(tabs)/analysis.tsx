@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { Circle, G, Path, Svg } from "react-native-svg";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatCard } from "@/components/common/StatCard";
 import { defaultTheme } from "@/constants/themes";
 import { getCategoryShare, getMonthlySummary, getTrend } from "@/services/analysisService";
+import { useRecordStore } from "@/stores/useRecordStore";
 import type { CategoryShareDTO, MonthlySummaryDTO, RecordType, TrendPointDTO } from "@/types/models";
 import { centsToYuan } from "@/utils/money";
 
@@ -59,6 +61,7 @@ function mapTrend(points: TrendPointDTO[]): TrendPoint[] {
 }
 
 export default function AnalysisScreen() {
+  const refreshKey = useRecordStore((state) => state.refreshKey);
   const [range, setRange] = useState<TrendRange>("7d");
   const [selectedExpenseCategory, setSelectedExpenseCategory] = useState("全部");
   const [selectedIncomeCategory, setSelectedIncomeCategory] = useState("全部");
@@ -72,36 +75,38 @@ export default function AnalysisScreen() {
   const [expenseTrend, setExpenseTrend] = useState<TrendPoint[]>([]);
   const [incomeTrend, setIncomeTrend] = useState<TrendPoint[]>([]);
 
-  useEffect(() => {
-    let mounted = true;
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-    async function loadAnalysis() {
-      const [nextSummary, nextExpenseCategories, nextIncomeCategories, nextExpenseTrend, nextIncomeTrend] =
-        await Promise.all([
-          getMonthlySummary(),
-          getCategoryShare("expense"),
-          getCategoryShare("income"),
-          getTrend("expense", range),
-          getTrend("income", range)
-        ]);
+      async function loadAnalysis() {
+        const [nextSummary, nextExpenseCategories, nextIncomeCategories, nextExpenseTrend, nextIncomeTrend] =
+          await Promise.all([
+            getMonthlySummary(),
+            getCategoryShare("expense"),
+            getCategoryShare("income"),
+            getTrend("expense", range),
+            getTrend("income", range)
+          ]);
 
-      if (mounted) {
-        setSummary(nextSummary);
-        setExpenseCategories(mapCategoryShare(nextExpenseCategories));
-        setIncomeCategories(mapCategoryShare(nextIncomeCategories));
-        setExpenseTrend(mapTrend(nextExpenseTrend));
-        setIncomeTrend(mapTrend(nextIncomeTrend));
+        if (active) {
+          setSummary(nextSummary);
+          setExpenseCategories(mapCategoryShare(nextExpenseCategories));
+          setIncomeCategories(mapCategoryShare(nextIncomeCategories));
+          setExpenseTrend(mapTrend(nextExpenseTrend));
+          setIncomeTrend(mapTrend(nextIncomeTrend));
+        }
       }
-    }
 
-    loadAnalysis().catch((error) => {
-      console.warn("Load analysis failed", error);
-    });
+      loadAnalysis().catch((error) => {
+        console.warn("Load analysis failed", error);
+      });
 
-    return () => {
-      mounted = false;
-    };
-  }, [range]);
+      return () => {
+        active = false;
+      };
+    }, [range, refreshKey])
+  );
 
   const expenseRatio = summary.incomeCents > 0 ? Math.round((summary.expenseCents / summary.incomeCents) * 1000) / 10 : 0;
 

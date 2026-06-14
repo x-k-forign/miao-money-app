@@ -13,6 +13,7 @@ export async function getCategories(kind?: CategoryKind): Promise<CategoryDTO[]>
     return webCategories.filter((category) => !kind || category.kind === kind);
   }
 
+  await ensureNativeDatabaseReady();
   const { listCategories } = await import("@/db/queries/categories");
   const categories = await listCategories(kind);
 
@@ -24,4 +25,13 @@ export async function getCategories(kind?: CategoryKind): Promise<CategoryDTO[]>
     color: category.color,
     sortOrder: category.sortOrder
   }));
+}
+
+async function ensureNativeDatabaseReady(): Promise<void> {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  const { initializeDatabase } = await import("@/db/init");
+  await initializeDatabase();
 }

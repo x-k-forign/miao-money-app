@@ -14,6 +14,8 @@ export type ImportFileType = "csv" | "xls" | "xlsx" | "pdf";
 
 export type ImportRowStatus = "pending" | "ready" | "error" | "duplicate" | "skipped" | "imported";
 
+export type ImportTransactionKind = "expense" | "income" | "transfer" | "refund" | "ignore";
+
 export type ClassificationRuleSource = "system" | "user";
 
 export type BudgetPriority = "fixed" | "essential" | "transport" | "flexible" | "high_spend" | "other";
@@ -52,7 +54,10 @@ export interface RecordDTO {
   importProvider?: ImportProvider | null;
   externalTradeNo?: string | null;
   merchantName?: string | null;
+  merchantOrderNo?: string | null;
   dedupeHash?: string | null;
+  transactionKind?: ImportTransactionKind;
+  relatedRecordId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -116,6 +121,7 @@ export interface ImportRecordDraftDTO {
   dedupeHash?: string;
   duplicateRecordId?: string;
   externalTradeNo?: string;
+  merchantOrderNo?: string;
   importTemplate?: string;
   merchantName?: string;
   note: string;
@@ -123,6 +129,7 @@ export interface ImportRecordDraftDTO {
   raw: Record<string, unknown>;
   recordDate: string;
   status: ImportRowStatus;
+  transactionKind: ImportTransactionKind;
   type: RecordType;
 }
 
